@@ -5,73 +5,117 @@ Created on Thu Dec 13 10:32:43 2018
 @author: Fotonica
 """
 
-from enum import Enum, IntEnum, IntFlag, Flag, unique
+from matplotlib import pyplot as plt
+import numpy as np
+from scipy.interpolate import interp1d
 
-def prop_to_int(propertie):
-    return int.from_bytes(propertie.value, byteorder='big')
+from enum import Enum, IntEnum, IntFlag, Flag, unique, auto
+
+from re import split
+
+import os, sys, errno
+
+from datetime import datetime
+
+from functools import wraps
+
+from tkinter import filedialog
+import tkinter as tk
+
+from lantz.core import ureg
+from lantz.qt import QtCore
+
+def prop_to_int(prop):
+    return int.from_bytes(prop.value, byteorder='big')
+
+def file_dialog_save(title="Guardar archivo", initial_dir="/", filetypes=[("all files","*.*")]):
+    tkroot = tk.Tk()
+    
+    path = filedialog.asksaveasfilename(title=title,
+                                        initialdir=initial_dir,
+                                        filetypes=filetypes)
+    tkroot.lift()
+    tkroot.withdraw()
+    
+    return path
+
+def file_dialog_open(title="Abrir archivo", initial_dir="/", filetypes=[("all files","*.*")]):
+    tkroot = tk.Tk()
+    
+    path = filedialog.askopenfilename(title=title,
+                                      initialdir=initial_dir,
+                                      filetypes=filetypes)
+    tkroot.lift()
+    tkroot.withdraw()
+    
+    return path
 
 def safe_call(parent, fun, *args, **kwargs):
-        
-        """
-        DOESN'T SUPPORT RETURNS. REPLACED BY safe_get OR safe_set
-        
-        Safe call for uEye functions. Handles error validation.
-        Check if return of uEye method is SUCCESS. If not, raises or prints to
-        log an error.
-        """
-        
-        ret = fun(*args, **kwargs)
-        
-        if ret != Error.IS_SUCCESS:
-            try:
-                parent.log_error("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
-            except AttributeError:
-                raise RuntimeError("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
+    
+    """
+    DOESN'T SUPPORT RETURNS. REPLACED BY safe_get OR safe_set
+    
+    Safe call for uEye functions. Handles error validation.
+    Check if return of uEye method is SUCCESS. If not, raises or prints to
+    log an error.
+    """
+    
+    ret = fun(*args, **kwargs)
+    
+    if ret != Error.IS_SUCCESS:
+        try:
+            parent.log_error("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
+        except AttributeError:
+            raise RuntimeError("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
 
 def safe_set(parent, fun, *args, **kwargs):
-        
-        """
-        Safe call for uEye setters. Handles error validation.
-        Check if return of uEye method is SUCCESS. If not, raises or prints to
-        log an error.
-        """
-        
-        ret = fun(*args, **kwargs)
-        
-        if ret != Error.IS_SUCCESS:
-            try:
-                parent.log_error("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
-            except AttributeError:
-                raise RuntimeError("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
+    
+    """
+    Safe call for uEye setters. Handles error validation.
+    Check if return of uEye method is SUCCESS. If not, raises or prints to
+    log an error.
+    """
+    
+    ret = fun(*args, **kwargs)
+    
+    if ret != Error.IS_SUCCESS:
+        try:
+            parent.log_error("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
+        except AttributeError:
+            raise RuntimeError("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
 
 def safe_get(parent, fun, *args, **kwargs):
-        
-        """
-        Safe call for uEye getters. Handles error validation.
-        Check if return of uEye method is SUCCESS. If not, raises or prints to
-        log an error.
-        """
-        
-        ret = fun(*args, **kwargs)
-        
-        if ret == Error.IS_NO_SUCCESS:
-            try:
-                parent.log_error("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
-                return ret
-            except AttributeError:
-                raise RuntimeError("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
-        else:
+    
+    """
+    Safe call for uEye getters. Handles error validation.
+    Check if return of uEye method is SUCCESS. If not, raises or prints to
+    log an error.
+    """
+    
+    ret = fun(*args, **kwargs)
+    
+    if ret == Error.IS_NO_SUCCESS:
+        try:
+            parent.log_error("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
             return ret
+        except AttributeError:
+            raise RuntimeError("Error while calling {0:}: error code {1:} '{2:}'".format(fun.__name__, ret, Error(ret).name))
+    else:
+        return ret
 
 class EnumMixin:
+    
     @classmethod
     def to_plain_dict(cls):
-        
         dictionary = {}
         for name, enum in cls.__members__.items():
             dictionary[name] = enum.value
         
         return dictionary
+
+class TrueFalse(EnumMixin, IntEnum):
+    TRUE = 1
+    FALSE = 0
 
 class Error(EnumMixin, IntEnum):
     IS_NO_SUCCESS = -1
@@ -607,6 +651,1573 @@ class PixelClock(EnumMixin, IntEnum):
     IS_PIXELCLOCK_CMD_SET = 6
 
 
+class BufferCore(QtCore.QObject):
+    
+    was_filled = QtCore.pyqtSignal()
+    was_reset = QtCore.pyqtSignal()
+    was_resized = QtCore.pyqtSignal()
+    
+    def __init__(self, size=1):
+        super().__init__()
+        
+        self._size = 1
+        self._index = 0
+        self._count = 0
+        
+        self.size = size
+    
+    def __iter__(self):
+        self._index = 0
+        self._count = 0
+        return self
+    
+    def __next__(self):
+        self.count += 1
+        self.index += 1
+        return self.index
+    
+    def __call__(self):
+        current_index = self._index
+        self.__next__()
+        
+        return current_index
+    
+    @property
+    def index(self):
+        return self._index
+    
+    @index.setter
+    def index(self, value):
+        self._index = int(value % self.size)
+        
+        if self._index == 0 and self._count != 0:
+            self.was_filled.emit()
+    
+    @property
+    def count(self):
+        return self._count
+    
+    @count.setter
+    def count(self, value):
+        self._count = int(value)
+    
+    @property
+    def size(self):
+        return self._size
+    
+    @size.setter
+    def size(self, value):
+        self._size = int(value)
+        self.reset()
+        
+        self.was_resized.emit()
+    
+    def reset(self):
+        self._index = 0
+        self._count = 0
+        
+        self.was_reset.emit()
+    
+    @property
+    def indices_new_first(self):
+        return (self.index-1 - np.arange(self.size)) % self.size
+    
+    @property
+    def indices_old_first(self):
+        return (np.arange(self.size) - self.index) % self.size
+
+
+class AOI2D(QtCore.QObject):
+    """
+    Abstract class for a two-dimensional area of interest
+    """
+    
+    # Default values:
+    _D_UNITS = ureg.dimensionless
+    _D_XMIN = 0
+    _D_XMAX = 0
+    _D_YMIN = 0
+    _D_YMAX = 0
+    
+    _D_CANVAS_XMIN = 0
+    _D_CANVAS_XMAX = 0
+    _D_CANVAS_YMIN = 0
+    _D_CANVAS_YMAX = 0
+    
+    limits_changed = QtCore.pyqtSignal(object)
+    
+    class Validators:
+        """
+        Container class for decorators used for input validation (decorators
+        cannot be defined as instance or static methods, so we define them
+        within this class)
+        """
+        
+        @classmethod
+        def value(self, func):
+            """
+            Decorator for validating Area objects setter values. Checks if
+            value is a pint quantity with right units.
+            """
+            
+            @wraps(func)
+            def validator(self, value):
+                units = self.units
+                name = func.__name__
+                
+                if name in ['inverse_x', 'inverse_y']:
+                    # Conversion to bool:
+                    value = bool(value)
+                else:
+                    # Universal conversion to pint quantity
+                    try:
+                        value = value.to(units)
+                    except AttributeError:
+                        value = value * units                    
+                
+                if name == 'origin':
+                    # Origin dimension validation
+                    try:
+                        if value.shape != (2,):
+                            raise ValueError('Area origin value must be a two element numpy or pint array with structure [xmin, ymin]')
+                    except AttributeError:
+                        raise ValueError('Area origin value must be a two element numpy or pint array with structure [xmin, ymin]')
+                
+                if name == 'end':
+                    # End dimension validation
+                    try:
+                        if value.shape != (2,):
+                            raise ValueError('Area end value must be a two element numpy or pint array with structure [xmax, ymax]')
+                    except AttributeError:
+                        raise ValueError('Area end value must be a two element numpy or pint array with structure [xmax, ymax]')
+                
+                if name == 'limits':
+                    # Limits dimension validation
+                    try:
+                        if value.shape != (4,):
+                            raise ValueError('Area limits value must be a four element numpy or pint array with structure [xmin, xmax, ymin, ymax]')
+                    except AttributeError:
+                            raise ValueError('Area limits value must be a four element numpy or pint array with structure [xmin, xmax, ymin, ymax]')
+                
+                # If value equals already set, do nothing
+                if name in ['inverse_x', 'inverse_y', 'xmin', 'xmax', 'ymin', 'ymax']:
+                    if value==self.__getattribute__(name):
+                        return None
+                
+                # If value falls beyond the opposed limit, redefine it
+                if name in ['xmin','xmax','ymin','ymax']:
+                    axis = name[0] # x or y
+                    side = name[1:] # min or max
+                    conj_side = 'min' if side=='max' else 'max'
+                    
+                    if side=='min' and value>self.__getattribute__(axis+conj_side):
+                        self.__setattr__(axis+conj_side, value)
+                    elif side=='max' and value<self.__getattribute__(axis+conj_side):
+                        self.__setattr__(axis+conj_side, value)
+                
+                return func(self, value)
+            
+            return validator
+        
+        @classmethod
+        def dimensions(self, func):
+            """
+            Decorator for validating Area objects setter input dimensions.
+            """
+            
+            @wraps(func)
+            def validator(self, value):
+                name = func.__name__
+                
+                if name == 'origin':
+                    # Origin dimension validation
+                    try:
+                        if value.shape != (2,):
+                            raise ValueError('Area origin value must be a two element numpy or pint array with structure [xmin, ymin]')
+                    except AttributeError:
+                        raise ValueError('Area origin value must be a two element numpy or pint array with structure [xmin, ymin]')
+                
+                if name == 'end':
+                    # End dimension validation
+                    try:
+                        if value.shape != (2,):
+                            raise ValueError('Area end value must be a two element numpy or pint array with structure [xmax, ymax]')
+                    except AttributeError:
+                        raise ValueError('Area end value must be a two element numpy or pint array with structure [xmax, ymax]')
+                
+                if name == 'limits':
+                    # Limits dimension validation
+                    try:
+                        if value.shape != (4,):
+                            raise ValueError('Area limits value must be a four element numpy or pint array with structure [xmin, xmax, ymin, ymax]')
+                    except AttributeError:
+                            raise ValueError('Area limits value must be a four element numpy or pint array with structure [xmin, xmax, ymin, ymax]')
+                
+                return func(self, value)
+            
+            return validator
+        
+        @classmethod
+        def canvas(self, func):
+            """
+            Decorator for validating Area object limits. Assumes value validation
+            already done.
+            """
+        
+            @wraps(func)
+            def validator(self, value):
+                canvas = self.canvas
+                
+                # If no canvas is provided, do not validate
+                if isinstance(canvas, type(None)):
+                    pass
+                
+                elif func.__name__ == 'xmin':
+                    # Validation of xmin
+                    if value < canvas.xmin:
+                        raise ValueError('Assigned xmin value is less than minimum allowed value of {}'.format(canvas.xmin))
+                
+                elif func.__name__ == 'xmax':
+                    # Validation of xmax
+                    if value > canvas.xmax:
+                        raise ValueError('Assigned xmax value is greater than minimum allowed value of {}'.format(canvas.xmax))
+                
+                elif func.__name__ == 'ymin':
+                    # Validation of ymin
+                    if value < canvas.ymin:
+                        raise ValueError('Assigned ymin value is less than minimum allowed value of {}'.format(canvas.ymin))
+                
+                elif func.__name__ == 'ymax':
+                    # Validation of ymax
+                    if value > canvas.ymax:
+                        raise ValueError('Assigned ymax value is greater than minimum allowed value of {}'.format(canvas.ymax))
+                
+                elif func.__name__ == 'width':
+                    # Validation of width
+                    if value > canvas.width:
+                        raise ValueError('Assigned width is larger than maximum width configured of {}'.format(canvas.width))
+                
+                elif func.__name__ == 'height':
+                    # Validation of height
+                    if value > canvas.height:
+                        raise ValueError('Assigned height is larger than maximum width configured of {}'.format(canvas.height))
+                
+                elif func.__name__ == 'origin':
+                    # Validation of height
+                    if any((value[0] < canvas.xmin,
+                            value[0] > canvas.xmax,
+                            value[1] < canvas.ymin,
+                            value[1] > canvas.ymax)):
+                        raise ValueError('Assigned area origin at {} lies outside canvas limits {}'.format(value, canvas.limits))
+                
+                elif func.__name__ == 'end':
+                    # Validation of height
+                    if any((value[0] < canvas.xmin,
+                            value[0] > canvas.xmax,
+                            value[1] < canvas.ymin,
+                            value[1] > canvas.ymax)):
+                        raise ValueError('Assigned area end at {} lies outside canvas limits {}'.format(value, canvas.limits))
+                
+                return func(self, value)
+            
+            return validator
+    
+    class Modificators:
+        """
+        Container class for decorators used for function modificators
+        (decorators cannot be defined as instance or static methods, so we
+        define them within this class)
+        """
+        
+#        @classmethod
+#        def emit_limits_changed(self, func):
+#            """
+#            Emits a limits_changed singal after function call. 
+#            """
+#            
+#            @wraps(func)
+#            def modificator(self, value):
+#                func(self, value)
+#                self.limits_changed.emit(self.limits)
+#            
+#            return modificator
+        
+        @classmethod
+        def inverse_axis(self, func):
+            """
+            
+            """
+            
+            @wraps(func)
+            def modificator(self, value):
+                
+                name = func.__name__
+                
+                if name in ['xmin','xmax','ymin','ymax'] and not isinstance(self.canvas, type(None)):
+                    axis = name[0]
+                    side = name[1:]
+                    conj_side = 'min' if side=='max' else 'max'
+                    
+                    if self.__getattribute__('inverse_'+axis):
+                        def alt_func(self, value):
+                            value = self.canvas.__getattribute__(axis+'max') - value
+                            self.__setattr__('_' + axis + conj_side, value)
+                        return alt_func(self, value)
+                    
+                return func(self, value)
+            
+            return modificator
+        
+        @classmethod
+        def inverse_axis_getter(self, func):
+            """
+            
+            """
+            
+            @wraps(func)
+            def modificator(self):
+                
+                name = func.__name__
+                axis = name[0]
+                side = name[1:]
+                conj_side = 'min' if side=='max' else 'max'
+                
+                if name in ['xmin','xmax','ymin','ymax'] and not isinstance(self.canvas, type(None)):
+                    axis = name[0]
+                    
+                    if self.__getattribute__('inverse_'+axis):
+                        return self.canvas.__getattribute__(axis+'max') - self.__getattribute__('_'+axis+conj_side)
+                    
+                return func(self)
+            
+            return modificator
+        
+    def __init__(self, limits=None, canvas_limits=None, units=None, inverse_x=False, inverse_y=False):
+        super().__init__()
+        
+        self.canvas = None
+        self._units = self._D_UNITS
+        self._xmin = self._D_XMIN * self._D_UNITS
+        self._xmax = self._D_XMAX * self._D_UNITS
+        self._ymin = self._D_YMIN * self._D_UNITS
+        self._ymax = self._D_YMAX * self._D_UNITS
+        self._inverse_x = False
+        self._inverse_y = False
+        
+        if isinstance(units, type(None)):
+            self.units = self._D_UNITS
+        else:
+            self.units = units
+        
+        if isinstance(canvas_limits, type(None)):
+            self.canvas = None
+        else:
+            self.canvas = self.__class__(limits=canvas_limits, units=self.units)
+        
+        self.inverse_x = inverse_x
+        self.inverse_y = inverse_y
+        
+        if isinstance(limits, type(None)):
+            if isinstance(self.canvas, type(None)):
+                # If no canvas is provided, use default limits
+                pass
+            else:
+                # If a canvas is provided, set maximum limits
+                self.limits = self.canvas.limits
+        else:
+            self.limits = limits
+    
+    @property
+    def inverse_x(self):
+        return self._inverse_x
+    
+    @inverse_x.setter
+    @Validators.value
+    def inverse_x(self, value):
+        self._inverse_x = value
+        self.limits = self.limits
+    
+    @property
+    def inverse_y(self):
+        return self._inverse_y
+    
+    @inverse_y.setter
+    @Validators.value
+    def inverse_y(self, value):
+        self._inverse_y = value
+        self.limits = self.limits
+    
+    @property
+    @Modificators.inverse_axis_getter
+    def xmin(self):
+        return self._xmin
+    
+    @xmin.setter
+    @Validators.value
+    @Modificators.inverse_axis
+    @Validators.canvas
+    def xmin(self, value):
+        self._xmin = value
+        self.limits_changed.emit(self.limits)
+    
+    @property
+    @Modificators.inverse_axis_getter
+    def xmax(self):
+        return self._xmax
+    
+    @xmax.setter
+    @Validators.value
+    @Modificators.inverse_axis
+    @Validators.canvas
+    def xmax(self, value):
+        self._xmax = value
+        self.limits_changed.emit(self.limits)
+    
+    @property
+    @Modificators.inverse_axis_getter
+    def ymin(self):
+        return self._ymin
+    
+    @ymin.setter
+    @Validators.value
+    @Modificators.inverse_axis
+    @Validators.canvas
+    def ymin(self, value):
+        self._ymax = value
+        self.limits_changed.emit(self.limits)
+    
+    @property
+    @Modificators.inverse_axis_getter
+    def ymax(self):
+        return self._ymax
+    
+    @ymax.setter
+    @Validators.value
+    @Modificators.inverse_axis
+    @Validators.canvas
+    def ymax(self, value):
+        self._ymax = value
+        self.limits_changed.emit(self.limits)
+    
+    @property
+    def origin(self):
+        return [self.xmin.magnitude, self.ymin.magnitude] * self.units
+    
+    @origin.setter
+    @Validators.value
+    @Validators.dimensions
+    @Validators.canvas
+    def origin(self, value):
+        self.xmin = value[0]
+        self.ymin = value[1]
+    
+    @property
+    def end(self):
+        return [self.xmax.magnitude, self.ymax.magnitude] * self.units
+    
+    @end.setter
+    @Validators.value
+    @Validators.dimensions
+    @Validators.canvas
+    def end(self, value):
+        self.xmax = value[0]
+        self.ymax = value[1]
+    
+    @property
+    def width(self):
+        return self.xmax - self.xmin
+    
+    @width.setter
+    @Validators.value
+    @Validators.canvas
+    def width(self, value):
+        # Modify xmax if area is within canvas or no canvas is provided
+        if isinstance(self.canvas, type(None)):
+            self.xmax = self.xmin + value
+        elif self.xmin + value < self.canvas.xmax:
+            self.xmax = self.xmin + value
+        # If not, modify both xmin and xmax
+        else:
+            self.xmax = self.canvas.xmax
+            self.xmin = self.canvas.xmax - value
+    
+    @property
+    def height(self):
+        return self.ymax - self.ymin
+    
+    @height.setter
+    @Validators.value
+    @Validators.canvas
+    def height(self, value):
+        # Modify ymax if area is within canvas or no canvas is provided
+        if isinstance(self.canvas, type(None)):
+            self.ymax = self.ymin + value
+        elif self.ymin + value < self.canvas.ymax:
+            self.ymax = self.ymin + value
+        # If not, modify both ymin and ymax
+        else:
+            self.ymax = self.canvas.ymax
+            self.ymin = self.canvas.ymax - value
+    
+    @property
+    def limits(self):
+        return [self.xmin.magnitude, self.xmax.magnitude, self.ymin.magnitude, self.ymax.magnitude] * self.units
+    
+    @limits.setter
+    @Validators.value
+    @Validators.dimensions
+    @Validators.canvas
+    def limits(self, value):
+        self.xmin = value[0]
+        self.xmax = value[1]
+        self.ymin = value[2]
+        self.ymax = value[3]
+    
+    @property
+    def xgrid(self):
+        return self._xgrid
+    
+    @property
+    def x_pitch(self):
+        return self._x_pitch
+    
+    @x_pitch.setter
+    @Validators.value
+    def x_pitch(self, value):
+        self._x_pitch = value
+        self.update_xgrid()
+    
+    @property
+    def x_offset(self):
+        return self._x_offset
+    
+    @x_offset.setter
+    @Validators.value
+    def x_offset(self, value):
+        self._x_offset = value
+        self.update_xgrid()
+    
+    @property
+    def ygrid(self):
+        return self._ygrid
+    
+    @property
+    def y_pitch(self):
+        return self._y_pitch
+    
+    @y_pitch.setter
+    @Validators.value
+    def y_pitch(self, value):
+        self._y_pitch = value
+        self.update_ygrid()
+    
+    @property
+    def y_offset(self):
+        return self._y_offset
+    
+    @y_offset.setter
+    @Validators.value
+    def y_offset(self, value):
+        self._y_offset = value
+        self.update_ygrid()
+    
+    @property
+    def units(self):
+        return self._units
+    
+    @units.setter
+    def units(self, value):
+        xmin = self._xmin.to(self.units).magnitude
+        xmax = self._xmax.to(self.units).magnitude
+        ymin = self._ymin.to(self.units).magnitude
+        ymax = self._ymax.to(self.units).magnitude
+        
+        if isinstance(value, type(None)):
+            self._units = ureg.dimensionless
+        else:
+            self._units = value
+        
+        self._xmin = xmin * self._units
+        self._xmax = xmax * self._units
+        self._ymin = ymin * self._units
+        self._ymax = ymax * self._units
+        
+        if not isinstance(self.canvas, type(None)):
+            self.canvas.units = self._units
+    
+    def set_canvas(self, canvas_limits):
+        if isinstance(canvas_limits, type(None)):
+            self.canvas = None
+        else:
+            self.canvas = self.__class__(limits=canvas_limits, units=self.units)
+            self.crop_to(self.canvas)
+    
+    def update_xgrid(self):
+        self._x_grid = (np.arange(self.xmin.to(self.units).magnitude, self.xmax.to(self.units).magnitude, self.x_pitch.to(self.units).magnitude) + self.x_offset.to(self.units)) * self.units
+    
+    def update_ygrid(self):
+        self._y_grid = (np.arange(self.ymin.to(self.units).magnitude, self.ymax.to(self.units).magnitude, self.y_pitch.to(self.units).magnitude) + self.y_offset.to(self.units)) * self.units
+    
+    def reset_limits(self):
+        if isinstance(self.canvas, type(None)):
+            self.limits = [self._D_XMIN, self._D_XMAX, self._D_YMIN, self._D_YMAX]
+        else:
+            self.limits = self.canvas.limits
+    
+    def crop_to(self, crop_area):
+        if not isinstance(crop_area, self.__class__):
+            crop_area = self.__class__(limits=crop_area, units=self.units)
+        
+        if self.xmin < crop_area.xmin:
+            self.xmin = crop_area.xmin
+        if self.xmax > crop_area.xmax:
+            self.xmax = crop_area.ymax
+        if self.ymin < crop_area.ymin:
+            self.ymin = crop_area.ymin
+        if self.ymax > crop_area.ymax:
+            self.ymax = crop_area.ymax
+
+
+class Spectrum(QtCore.QObject):
+    
+    wavelength_changed = QtCore.pyqtSignal(object)
+    
+    class _RawSpectrum(QtCore.QObject):
+        
+        D_X_UNITS = "px"
+        D_Y_UNITS = "arb"
+        
+        def __init__(self, x=None, y=None, x_units=None, y_units=None, buffer_size=1):
+            super().__init__()
+            
+            self.buffer = BufferCore(size=buffer_size)            
+            
+            x = np.array(x, dtype=float)
+            y = np.array(y, dtype=float)
+            
+            # If None are passed, initialize with default values
+            if x.ndim == 0:
+                x = np.array([0, 1], dtype=float)
+            if y.ndim == 0:
+                y = np.zeros((self.buffer.size, x.size), dtype=float)
+            
+            # If 1D y value passed, reshape to 2D with wavelength in axis 1
+            if y.ndim == 1:
+                y = y.reshape((1, y.size))
+            
+            # Validate sizes
+            if x.ndim != 0 and y.ndim != 0:
+                if x.size != y.shape[1]:
+                    raise ValueError("Spectrum x and y data sizes must match.")
+            
+            self._x = x
+            self._y = np.zeros((self.buffer.size, y.shape[1]))
+            self.y = y
+            self.x_units = x_units if x_units else self.D_X_UNITS
+            self.y_units = y_units if y_units else self.D_Y_UNITS
+        
+        def __getitem__(self, value):
+            # Get indices ordered from first to last, then slice as indicated by value and reorder to mantain old-first order
+            indices = np.flip(self.buffer.indices_new_first[value])
+            
+            x = self.x
+            y = self.y[indices, :]
+            
+            spectrum = self.__class__(x=x, y=y, buffer_size=indices.size)
+            spectrum.buffer.index = 0
+            spectrum.buffer.count = self.buffer.count
+            
+            return spectrum
+        
+        @property
+        def x(self):
+            return self._x
+        
+        @x.setter
+        def x(self, value):
+            value = np.array(value, dtype=float)
+            
+            if value.ndim == 0:
+                return None
+            if value.ndim == 1:
+                self._x = value
+                
+                if value.size != self.y.shape[1]:
+                    self._y = np.zeros((self.buffer.size, value.size), dtype=float)
+            elif value.ndim > 1:
+                raise ValueError("Spectrum x data must be 1D array-like type.")
+        
+        @property
+        def y(self):
+            return self._y
+        
+        @y.setter
+        def y(self, value):
+            value = np.array(value, dtype=float)
+            
+            if value.ndim == 0:
+                return None
+            elif value.ndim == 1:
+                value = value.reshape((1, value.size))
+            elif value.ndim > 2:
+                raise ValueError("Spectrum y value must be a one or two dimensional array.")
+            
+            if value.shape[1] != self._x.size:
+                raise ValueError("Spectrum x and y data sizes must match.")
+            
+            for idx in range(value.shape[0]):
+                self._y[self.buffer(), :] = value[idx, :]
+        
+        def average(self):
+            x = self.x
+            y = np.mean(self.y, axis=0)
+            
+            return self.__class__(x, y)
+        
+        def resize_buffer(self, new_size):
+            old_size = self.buffer.size
+            
+            if new_size == old_size:
+                return None
+            
+            # If shrinking, retain the latest elements from buffer
+            if new_size < old_size:
+                indices = np.flip(self.buffer.indices_new_first[0:new_size])
+                self._y = self.y[indices, :]
+                
+                self.buffer.size = new_size
+                self.buffer.index = new_size
+                self.buffer.count = new_size
+            
+            # If expanding, pad with zeros
+            if new_size > old_size:
+                # First, reorder
+                indices = self.buffer.indices_old_first
+                old_block = self.y[indices, :]
+                
+                # Now, pad with zeros
+                new_block = np.zeros((new_size-old_size, self.y.shape[1]))
+                self._y = np.vstack((old_block, new_block))
+                
+                new_count = min(self.buffer.count, old_size)
+                self.buffer.size = new_size
+                self.buffer.index = new_count
+                self.buffer.count = new_count
+        
+        def plot(self):
+            plt.figure()
+            plt.plot(self.x, self.y.flatten())
+            plt.grid()
+            plt.xlabel("Wavelength [{}]".format(self.x_units))
+            plt.ylabel("Intensity [{}]".format(self.y_units))
+        
+        @classmethod
+        def from_spectrum(cls, spectrum_object, spectrum_type='raw'):
+            if spectrum_type=='raw':
+                return cls(spectrum_object.raw.x, spectrum_object.raw.y)
+            elif spectrum_type=='process':
+                return cls(spectrum_object.process.x, spectrum_object.process.y)
+            elif spectrum_type=='dark':
+                return cls(spectrum_object.dark.x, spectrum_object.dark.y)
+            elif spectrum_type=='reference':
+                return cls(spectrum_object.reference.x, spectrum_object.reference.y)
+    
+    class _modes(Enum):
+        INTENSITY = 'intensity'
+        TRANSMISSION = 'transmission'
+        ABSORBANCE = 'absorbance'
+    
+    modes = set(item.value for item in _modes)
+    
+    def __init__(self, x=None, y=None, mode='intensity', reference=None, dark=None, normalize=False, subtract_dark=False, averages=1):
+        super().__init__()
+        
+        self._x = np.array([0, 1])
+        self.raw = self._RawSpectrum()
+        self.dark = self._RawSpectrum()
+        self.reference = self._RawSpectrum()
+        self.processed = self._RawSpectrum()
+        
+        self.mode = mode
+        self.subtract_dark = subtract_dark
+        self.normalize = normalize
+        self.average = False
+        self.averages = averages
+        
+        self.calibrate_x = True
+        self.xcal = [1.0, 0.0]
+        self.x_units = "nm"
+        self.calibrate_y = False
+        self.ycal = [1.0, 0.0]
+        self.y_units = "arb"
+        
+        self.x = x
+        self.y = y
+        self.reference = reference
+        self.dark = dark
+        
+        self.process()
+    
+    @property
+    def averages(self):
+        return self.raw.buffer.size
+    
+    @averages.setter
+    def averages(self, value):
+        value = int(value)
+        
+        if value < 0:
+            raise ValueError('Number of spectra to average must be at least 1.')
+        
+        if value == 0:
+            value = 1
+        
+        if not isinstance(self.raw, type(None)):
+            if value != self.raw.buffer.size:
+                self.raw.resize_buffer(value)
+                self.average = value > 1
+    
+    @property
+    def x(self):
+        return self._x
+    
+    @x.setter
+    def x(self, value):
+        value = np.array(value, dtype=float)
+        
+        if value.ndim == 0:
+            return None
+        if value.ndim == 1:
+            if value.size != self._x.size:
+                self.reshape_x(new_x=value)
+            else:
+                self._x = value
+                
+                if not isinstance(self.raw, type(None)):
+                    self.raw.x = self.wavelength
+                if not isinstance(self.dark, type(None)):
+                    self.dark.x = self.wavelength
+                if not isinstance(self.reference, type(None)):
+                    self.reference.x = self.wavelength
+                if not isinstance(self.processed, type(None)):
+                    self.processed.x = self.wavelength
+        elif value.ndim > 1:
+            raise ValueError("Spectrum x data must be 1D array-like type.")
+    
+    @property
+    def y(self):
+        return self.raw._y
+    
+    @y.setter
+    def y(self, value):
+        self.raw.y = value
+        self.process()
+    
+    @property
+    def wavelength(self):
+        if isinstance(self._x, type(None)):
+            return None
+        else:
+            if self.calibrate_x:
+                return self.x_calibration(self.xcal, self._x)
+            else:
+                return self._x
+    
+    @property
+    def mode(self):
+        return self._mode.value
+    
+    @mode.setter
+    def mode(self, value):
+        if isinstance(value, str):
+            self._mode = self._modes(value.lower())
+        elif isinstance(value, type(self._modes.INTENSITY)):
+            self._mode = self._modes(value.value)
+        else:
+            raise TypeError("Spectrum mode value must be a valid string or a mode enum element.")
+    
+#    def update_data(self, new_x=None, new_y=None):
+#        new_x = np.array(new_x, dtype=float)
+#        new_y = np.array(new_y, dtype=float)
+#        
+#        if new_x.ndim == 0 and new_y.ndim == 0:
+#            return None
+#        elif new_x.ndim == 1 and new_y.ndim == 1:
+#            if new_x.shape != new_y.shape:
+#                raise ValueError("Spectrum x and y data sizes must match.")
+#            else:
+#                self.x = new_x
+#                self.process()
+#        elif new_x.ndim == 1:
+#            # Validations are within _RawSpectra
+#            self.x = new_x
+#        elif new_y.ndim == 1:
+#             # Validations are within _RawSpectra
+#            self.raw.y = new_y
+#            self.process()
+#        else:
+#            raise ValueError("Spectrum data must be 1D array-like type.")
+    
+    def reshape_x(self, new_x=None, new_limits=None):
+        old_limits = [self.x[0], self.x[-1]+1]
+        
+        # If nothing is passed, do nothing
+        if isinstance(new_limits, type(None)) and isinstance(new_x, type(None)):
+            return None
+        
+        # If x value passed, get new_limits
+        elif not isinstance(new_x, type(None)):
+            new_limits = [min(new_x), max(new_x)+1]
+        
+        # If new_x is not provided, generate it
+        if isinstance(new_x, type(None)):
+            new_x = np.arange(new_limits[0], new_limits[1])
+        
+        # If limits did not change, do nothing
+        if all(np.equal(old_limits, new_limits)):
+            return None
+        
+        if self.calibrate_x:
+            calibrated_x = self.x_calibration(self.xcal, new_x)
+        else:
+            calibrated_x = new_x
+        
+        # Are you shrinking? Take a slice
+        if new_limits[0] <= old_limits[0]:
+            first_idx = 0
+        elif new_limits[0] < old_limits[1]:
+            first_idx = new_limits[0] - old_limits[0]
+        else:
+            first_idx = self.x.size
+        
+        if new_limits[1] >= old_limits[1]:
+            last_idx = self.x.size
+        elif new_limits[1] > old_limits[0]:
+            last_idx = new_limits[1] - old_limits[1]
+        else:
+            last_idx = 0
+#        
+#        first_idx = min(0, new_limits[0] - old_limits[0])
+#        last_idx = new_limits[1] - old_limits[1]
+#        first_value = min(max(old_limits[0], new_limits[0]), old_limits[1]-1)
+#        last_value = max(min(old_limits[1]-1, new_limits[1]-1), old_limits[0])
+#        first_idx = (self.x==first_value).nonzero()[0][0]
+#        last_idx = (self.x==last_value).nonzero()[0][0] + 1
+        slc = slice(int(first_idx), int(last_idx))
+#        print(slc)
+        
+#        print(last_value, last_idx)
+        
+        # Are you expanding? Pad with zeros
+        pad_size_left = min(max(0, int(old_limits[0]-new_limits[0])), new_limits[1]-new_limits[0])
+        pad_size_right = min(max(0, int(new_limits[1]-old_limits[1])), new_limits[1]-new_limits[0])
+        
+        # Go through all spectrums and reshape
+        for spectrum in [self.raw, self.dark, self.reference, self.processed]:
+            if not isinstance(spectrum, type(None)):       
+                zeros_left = np.zeros((spectrum.y.shape[0], pad_size_left))
+                zeros_right = np.zeros((spectrum.y.shape[0], pad_size_right))
+#                print(zeros_left.shape, spectrum.y[:, slc].shape, zeros_right.shape)
+                
+                print(slc)
+                spectrum._y = np.hstack((zeros_left, spectrum.y[:, slc], zeros_right))
+                spectrum._x = calibrated_x
+                
+                
+#                # Are you shrinking? Take slice
+#                if new_limits[0] > old_limits[0] or new_limits[1] < old_limits[1]:
+#                    indices = np.logical_and(self.x >= new_limits[0], self.x < new_limits[1])
+#                    new_y = new_y[:, indices]
+#                
+#                # Are you extending? Pad with zeros
+#                if new_limits[0] < old_limits[0]:
+#                    pad_size_left = int(old_limits[0]-new_limits[0])
+#                    zeros = np.zeros((self.raw._y.shape[0], pad_size_left))
+#                    new_y = np.hstack((zeros, new_y))
+#                if new_limits[1] > old_limits[1]:
+#                    pad_size_right = int(new_limits[1]-old_limits[-1])
+#                    zeros = np.zeros((self.raw._y.shape[0], pad_size_right))
+#                    new_y = np.hstack((new_y, zeros))
+        
+        self._x = new_x
+    
+    def process(self):
+        processed = self.raw
+        reference = self.reference
+        
+        if self.average:
+            processed = processed.average()
+        else:
+            processed = processed[0]
+        
+        if self.subtract_dark:
+            processed = self.dark_subtraction(processed, self.dark)
+        
+        if self._mode == self._modes.INTENSITY:
+            pass
+        else:
+            if self.subtract_dark:
+                reference = self.dark_subtraction(reference, self.dark)
+            if self._mode == self._modes.TRANSMISSION:
+                processed = self.compute_transmission(processed, reference)
+            elif self._mode == self._modes.ABSORBANCE:
+                processed = self.compute_absorbance(processed, reference)
+        
+        if self.calibrate_y:
+            processed = self.y_calibration(self.ycal, processed)
+        if self.normalize:
+            processed = self.normalization(processed)
+        
+        self.processed = processed
+    
+    def set_x_units(self, new_units):
+        if not isinstance(self.raw, type(None)):
+            self.raw.x_units = new_units
+        if not isinstance(self.dark, type(None)):
+            self.dark.x_units = new_units
+        if not isinstance(self.reference, type(None)):
+            self.reference.x_units = new_units
+        if not isinstance(self.processed, type(None)):
+            self.processed.x_units = new_units
+    
+    def set_y_units(self, new_units):
+        if not isinstance(self.raw, type(None)):
+            self.raw.y_units = new_units
+        if not isinstance(self.dark, type(None)):
+            self.dark.y_units = new_units
+        if not isinstance(self.reference, type(None)):
+            self.reference.y_units = new_units
+        if not isinstance(self.processed, type(None)):
+            self.processed.y_units = new_units
+    
+    @staticmethod
+    def to_wavenumber(wavelength, y, interpolate=False):
+        wavenumber = np.flip(2*np.pi/wavelength)
+        y = np.flip(y)
+        
+        if interpolate:
+            interpolation = interp1d(wavenumber, y, kind=interpolate, copy=True)
+            
+            min_k = wavenumber[0]
+            max_k = wavenumber[-1]
+            n = wavenumber.size
+            
+            wavenumber = np.linspace(min_k, max_k, n)
+            y = interpolation(wavenumber)
+        
+        return wavenumber, y
+    
+    def x_calibration(self, pol, value):
+        return np.polyval(pol, value)
+    
+    def y_calibration(self, pol, value):
+        if isinstance(value, self._RawSpectrum):
+            value.y = np.polyval(pol, value.y)
+            return value
+        else:
+            return np.polyval(pol, value)
+    
+    @classmethod
+    def normalization(cls, raw):
+        return cls._RawSpectrum(raw.x, raw.y/np.max(raw.y))
+    
+    @classmethod
+    def dark_subtraction(cls, raw, dark):
+        if isinstance(raw, type(None)):
+            return None
+        elif isinstance(dark, type(None)):
+            return raw
+        else:
+            if any(np.not_equal(raw.x, dark.x)):
+                raise ValueError('Cannot subtract dark spectrum. Wavelengths from raw and dark spectra do not match.')
+            
+            return cls._RawSpectrum(raw.x, np.subtract(raw.y, dark.y))
+    
+    @classmethod
+    def compute_transmission(cls, raw, ref):
+        if isinstance(raw, type(None)):
+            return None
+        elif isinstance(ref, type(None)):
+            return raw
+        else:
+            if any(np.not_equal(raw.x, ref.x)):
+                raise ValueError('Cannot compute transmission. Wavelengths from raw and reference spectra do not match.')
+            
+            return cls._RawSpectrum(raw.x, np.divide(raw.y, ref.y))
+    
+    @classmethod
+    def compute_absorbance(cls, raw, ref):
+        if isinstance(raw, type(None)):
+            return None
+        elif isinstance(ref, type(None)):
+            return raw
+        else:
+            if any(np.not_equal(raw.x, ref.x)):
+                raise ValueError('Cannot compute absorption. Wavelengths from raw and reference spectra do not match.')
+            
+            return cls._RawSpectrum(raw.x, np.log10(np.divide(ref.y, raw.y)))
+    
+    def save(self, path, processed=True, raw=False, dark=False, reference=False, decimals=10):
+        NL = '\n' # Newline character
+        SEP = '\t' # Delimiter/separator character
+        fmt = '%.'+str(decimals)+'g'
+#        print("Called spectrum.save. Saving: processed {} raw {} dark {} reference {}".format(processed, raw, dark, reference))
+        
+        header = 'Date: {}'.format(datetime.now()) + NL
+        header += 'Mode: {}'.format(self.mode) + NL
+        header += 'Normalization: {}'.format(self.normalize) + NL
+        header += 'Dark subtraction: {}'.format(self.subtract_dark) + NL
+        header += 'Buffer size: {}'.format(self.raw.buffer.size) + NL
+        header += NL
+        header += 'Wavelength [{}]'.format(self.raw.x_units)
+        
+        output = self.processed.x
+        
+        if processed and not isinstance(self.processed, type(None)):
+            output = np.vstack((output, self.processed.y))
+            header += SEP + 'Processed'
+        if dark and not isinstance(self.dark, type(None)):
+            output = np.vstack((output, self.dark.y))
+            header += SEP + 'Dark'
+        if reference and not isinstance(self.reference, type(None)):
+            output = np.vstack((output, self.reference.y))
+            header += SEP + 'Reference'
+        if raw and not isinstance(self.raw, type(None)):
+            output = np.vstack((output, self.raw.y))
+            header += SEP + 'Raw'
+        
+        output = output.transpose()
+        
+        np.savetxt(path, output, fmt=fmt, delimiter=SEP, newline=NL, header=header)
+    
+    @classmethod
+    def from_file(cls, path=None):
+        NL = '\n' # Newline character
+        SEP = '\t' # Delimiter/separator character
+        
+        if not path:
+            path = file_dialog_open()
+        
+        # First read header
+        header = []
+        
+        with open(path, 'r') as file:
+            # Seart for header start flag:
+            while True:
+                line = file.readline()
+                if line[0] != "#":
+                    break
+                else:
+                    header.append(line.replace("# ",""))
+        
+        # Parse properties
+        props = {}
+        for line in header[0:-1]:
+            try:
+                key, value = tuple(split(": ", line))
+                key = key.lower().replace(" ","_")
+                
+                if key == "date":
+                    pass
+                elif key == "mode":
+                    pass
+                elif key == "normalization":
+                    value = value == "True"
+                elif key == "dark_subtraction":
+                    value = value == "True"
+                elif key == "buffer_size":
+                    value = int(value)
+                
+                props[key] = value
+            except ValueError:
+                pass
+        
+        # Get column names
+        names = split(SEP, header[-1])
+        for index in range(len(names)):
+            names[index] = names[index].lower().replace(NL, "")
+        
+        # Import data and initialize return
+        data = np.loadtxt(fname=path, dtype=float, comments="#", delimiter=SEP)
+        raw_buffer_size = data.shape[1] - len(names) + 1
+        
+        spectrum = cls()
+        
+        if "wavelength" in names:
+            wavelength = data[:, names.index("wavelength")]
+        else:
+            wavelength = None
+        if "processed" in names:
+            spectrum.processed = spectrum._RawSpectrum(wavelength, data[:, names.index("processed")])
+        if "raw" in names:
+            slc = slice(names.index("raw"), names.index("raw") + raw_buffer_size)
+            spectrum.raw = spectrum._RawSpectrum(wavelength, data[:, slc].transpose(), buffer_size=raw_buffer_size)
+        if "dark" in names:
+            dark = data[:, raw_buffer_size+names.index("dark")-1]
+            spectrum.dark = spectrum._RawSpectrum(wavelength, dark)
+        if "reference" in names:
+            spectrum.reference = spectrum._RawSpectrum(wavelength, data[:, raw_buffer_size+names.index("reference")])
+        
+        return spectrum
+
+
+class SaveManager(QtCore.QObject):
+    
+    saved = QtCore.pyqtSignal(object, object, object)
+    started = QtCore.pyqtSignal()
+    stopped = QtCore.pyqtSignal()
+    
+    stop_condition_set = QtCore.pyqtSignal(object)
+    limit_set = QtCore.pyqtSignal(object)
+    append_set = QtCore.pyqtSignal(object)
+    base_path_set = QtCore.pyqtSignal(object)
+    callback_args_set = QtCore.pyqtSignal(object)
+    callback_kwargs_set = QtCore.pyqtSignal(object)
+    
+    class _stop_conditions(Enum):
+        COUNT = 'count'
+        TIME = 'time'
+    
+    _numerations = ['none', 'count', 'timestamp']
+        
+    def __init__(self, callback, signal, stop_condition='count', limit=1, append=['timestamp'], default_ext=".txt", *args, **kwargs):
+        super().__init__()
+        
+        self._default_ext = ""
+        self._base_path = None
+        self._folder = None
+        self._base_name = None
+        self._extension = None
+        self._stop_condition = self._stop_conditions.COUNT
+        self._limit = 1
+        self._save_every = 1
+        self._append = []
+        self._callback_args = ()
+        self._callback_kwargs = {}
+        
+        self.signal = signal
+        self.callback = callback
+        self.callback_args = args
+        self.callback_kwargs = kwargs
+        
+        self.stop_condition = self._stop_conditions(stop_condition)
+        self.limit = limit
+        self.save_every = 1
+        self.count = 0
+        self.signal_emissions = 0
+        self.append = append
+        self.default_ext = default_ext
+        
+        self.enabled = False
+        self.start_time = None
+        self.stop_time = None
+        self.run_time = None
+    
+    @property
+    def stop_condition(self):
+        return self._stop_condition.value
+    
+    @stop_condition.setter
+    def stop_condition(self, value):
+        if isinstance(value, str):
+            value = self._stop_conditions(value.lower())
+        elif isinstance(value, type(self._stop_conditions.COUNT)):
+            pass
+        else:
+            raise TypeError("Value type must be either string or stop_conditions enum.")
+        
+        if value != self._stop_condition:
+            self._stop_condition = value
+            self.limit = 1
+            self.append = self.append
+            
+            self.stop_condition_set.emit(self.stop_condition)
+    
+    @property
+    def limit(self):
+        return self._limit
+    
+    @limit.setter
+    def limit(self, value):
+        if self._stop_condition == self._stop_conditions.COUNT:
+            self._limit = int(value) if value >= 0 else 0
+        elif self._stop_condition == self._stop_conditions.TIME:
+            try:
+                self._limit = value.to('s')
+            except AttributeError:
+                self._limit = float(value) * ureg.s
+        
+        self.limit_set.emit(self._limit)
+    
+    @property
+    def save_every(self):
+        return self._save_every
+    
+    @save_every.setter
+    def save_every(self, value):
+        value = int(value)
+        value = max(value, 1)
+        
+        self._save_every = value
+    
+    @property
+    def append(self):
+        return self._append
+    
+    @append.setter
+    def append(self, value):
+        if isinstance(value, type(None)):
+            value = []
+        elif isinstance(value, bool):
+            if value == False:
+                value = []
+            else:
+                raise TypeError("Append value must be a list of strings with valid options")
+        elif isinstance(value, str):
+            value = [value.lower()]
+        elif not isinstance(value, list):
+            raise TypeError("Append value must be a list of strings with valid options")
+        
+        # Validate:
+        for x in value:
+            if x not in self._numerations:
+                raise ValueError("Invalid append value '{}'")
+        
+        # No numeration is allowed only for single file operation
+        if not value:
+            if self._stop_condition == self._stop_conditions.TIME:
+                value = ["timestamp"]
+            if self._stop_condition == self._stop_conditions.COUNT and self.limit > 1:
+                value = ["timestamp"]
+        
+        self._append = value
+        self.append_set.emit(self._append)
+    
+    @property
+    def path(self):
+        path = os.path.join(self._folder, self._base_name)
+        
+        if "timestamp" in self.append:
+            path += "_" + self.get_timestamp()
+        if "count" in self.append:
+            path += "_" + str(self.count)
+        
+        path += self._extension
+        
+        return path
+    
+    @path.setter
+    def path(self, value):
+        if not value:
+            self._base_path = None
+            self._folder = None
+            self._base_name = None
+            self._extension = None
+            
+            self.base_path_set.emit(self._base_path)
+        elif not isinstance(value, str):
+            raise TypeError("File path must be a string with a valid path.")
+        elif not self.is_pathname_valid(value):
+            raise ValueError("Invalid file path")
+        else:
+            value = value.replace("/","\\")
+            
+            self._base_path = value
+            self._folder, self._base_name, self._extension, _ = self.split_path(value)
+            
+            if not self._extension:
+                self._extension = self._default_ext
+            
+            self.base_path_set.emit(self._base_path)
+    
+    def set_path(self, path=None):
+        if not path:
+            path = self.file_dialog_save()
+        
+        self.path = path
+    
+    @property
+    def default_ext(self):
+        return self._default_ext
+    
+    @default_ext.setter
+    def default_ext(self, value):
+        if isinstance(value, type(None)):
+            value = ""
+        elif not isinstance(value, str):
+            raise TypeError("Default extension must be string type.")
+        
+        if value[0] != ".":
+            value = "." + value
+        
+        self._default_ext = value
+    
+    @property
+    def callback_args(self):
+        return self._callback_args
+    
+    @callback_args.setter
+    def callback_args(self, value):
+        self._callback_args = value
+        
+        self.callback_args_set.emit(value)
+    
+    @property
+    def callback_kwargs(self):
+        return self._callback_kwargs
+    
+    @callback_kwargs.setter
+    def callback_kwargs(self, value):
+        self._callback_kwargs = value
+        
+        self.callback_kwargs_set.emit(value)
+    
+    def save(self):
+        self.callback(self.path, *self.callback_args, **self.callback_kwargs)
+        
+        self.saved.emit(self.path, self.count, self.run_time)
+        self.update_run_time()
+        self.count += 1
+    
+    def start(self):
+        if not self._base_path:
+            self.set_path()
+        
+        self.enabled = True
+        self.signal.connect(self.run)
+        self.started.emit()
+        
+        self.count = 0
+        self.start_time = datetime.now()
+        self.stop_time = None
+    
+    def stop(self):
+        self.enabled = False
+        self.signal.disconnect(self.run)
+        self.stopped.emit()
+        
+        self.stop_time = datetime.now()
+    
+    @QtCore.pyqtSlot()
+    def run(self, *args, **kwargs):
+        if self.enabled:
+            self.signal_emissions += 1
+            self.update_run_time()
+            
+            if self.signal_emissions % self.save_every == 0:
+                self.save()
+            
+            # Check for stop conditions
+            if self._stop_condition == self._stop_conditions.COUNT:
+                if self.count >= self.limit:
+                    self.stop()
+            elif self._stop_condition == self._stop_conditions.TIME:
+                if self.run_time >= self.limit:
+                    self.stop()
+    
+    def update_run_time(self):
+        if self.start_time:
+            self.run_time = (datetime.now() - self.start_time).total_seconds() * ureg.s
+        else:
+            self.run_time = None
+    
+    @staticmethod
+    def get_timestamp():
+        now = datetime.now()
+        milis = now.microsecond // 1000
+        return now.strftime('%Y%m%d_%H%M%S.') + str(milis)
+    
+    @staticmethod
+    def file_dialog_save(title="Guardar archivo", initial_dir="/", filetypes=[("Text files","*.txt")]):
+        tkroot = tk.Tk()
+        
+        path = filedialog.asksaveasfilename(title=title,
+                                            initialdir=initial_dir,
+                                            filetypes=filetypes)
+        tkroot.lift()
+        tkroot.withdraw()
+        
+        return path
+    
+    @staticmethod
+    def split_path(path):
+        from os.path import split, splitext
+        
+        folder, full_name = split(path)
+        name, extension = splitext(full_name)
+        
+        return folder, name, extension, full_name
+    
+    @staticmethod
+    def is_pathname_valid(pathname: str) -> bool:
+        '''
+        `True` if the passed pathname is a valid pathname for the current OS;
+        `False` otherwise.
+        '''
+        
+        ERROR_INVALID_NAME = 123
+        
+        # If this pathname is either not a string or is but is empty, this pathname
+        # is invalid.
+        try:
+            if not isinstance(pathname, str) or not pathname:
+                return False
+    
+            # Strip this pathname's Windows-specific drive specifier (e.g., `C:\`)
+            # if any. Since Windows prohibits path components from containing `:`
+            # characters, failing to strip this `:`-suffixed prefix would
+            # erroneously invalidate all valid absolute Windows pathnames.
+            _, pathname = os.path.splitdrive(pathname)
+    
+            # Directory guaranteed to exist. If the current OS is Windows, this is
+            # the drive to which Windows was installed (e.g., the "%HOMEDRIVE%"
+            # environment variable); else, the typical root directory.
+            root_dirname = os.environ.get('HOMEDRIVE', 'C:') \
+                if sys.platform == 'win32' else os.path.sep
+            assert os.path.isdir(root_dirname)   # ...Murphy and her ironclad Law
+    
+            # Append a path separator to this directory if needed.
+            root_dirname = root_dirname.rstrip(os.path.sep) + os.path.sep
+    
+            # Test whether each path component split from this pathname is valid or
+            # not, ignoring non-existent and non-readable path components.
+            for pathname_part in pathname.split(os.path.sep):
+                try:
+                    os.lstat(root_dirname + pathname_part)
+                # If an OS-specific exception is raised, its error code
+                # indicates whether this pathname is valid or not. Unless this
+                # is the case, this exception implies an ignorable kernel or
+                # filesystem complaint (e.g., path not found or inaccessible).
+                #
+                # Only the following exceptions indicate invalid pathnames:
+                #
+                # * Instances of the Windows-specific "WindowsError" class
+                #   defining the "winerror" attribute whose value is
+                #   "ERROR_INVALID_NAME". Under Windows, "winerror" is more
+                #   fine-grained and hence useful than the generic "errno"
+                #   attribute. When a too-long pathname is passed, for example,
+                #   "errno" is "ENOENT" (i.e., no such file or directory) rather
+                #   than "ENAMETOOLONG" (i.e., file name too long).
+                # * Instances of the cross-platform "OSError" class defining the
+                #   generic "errno" attribute whose value is either:
+                #   * Under most POSIX-compatible OSes, "ENAMETOOLONG".
+                #   * Under some edge-case OSes (e.g., SunOS, *BSD), "ERANGE".
+                except OSError as exc:
+                    if hasattr(exc, 'winerror'):
+                        if exc.winerror == ERROR_INVALID_NAME:
+                            return False
+                    elif exc.errno in {errno.ENAMETOOLONG, errno.ERANGE}:
+                        return False
+        # If a "TypeError" exception was raised, it almost certainly has the
+        # error message "embedded NUL character" indicating an invalid pathname.
+        except TypeError:
+            return False
+        # If no exception was raised, all path components and hence this
+        # pathname itself are valid. (Praise be to the curmudgeonly python.)
+        else:
+            return True
+        # If any other exception was raised, this is an unrelated fatal issue
+        # (e.g., a bug). Permit this exception to unwind the call stack.
 
 
 

@@ -49,11 +49,10 @@ from lantz import Feat, Action
 import logging
 log.log_to_screen(logging.DEBUG)
 
-import utilities_old as uEye_utils
+from utilities import AOI2D
 import utilities as utils
 from utilities import safe_call, safe_get, safe_set
 #---------------------------------------------------------------------------------------------------------------------------------------
-
 
 def validate_handle(handle, none_return = None):
     
@@ -124,44 +123,36 @@ def validate_aoi(value, max_width, max_height):
     return value
 
 
-
-class AOI():
-    
-    @staticmethod
-    def validate_aoi(value, max_width, max_height):
-        return validate_aoi(value, max_width, max_height)
+class CameraAOI(AOI2D):
     
     @classmethod
     def from_camera(cls, camera):
-        handle = camera.handle
         max_width = int(camera.sensor_info.max_width)
         max_height = int(camera.sensor_info.max_height)
         
-        return cls(handle, max_width, max_height)
+        return cls(camera.handle, limits=[0,max_width,0,max_height], canvas_limits=[0,max_width,0,max_height], units=ureg.px)
     
-    def __init__(self, handle, max_width, max_height, value = None):
-        self.handle, self._handle = validate_handle(handle)
-        self.max_width = int(max_width)
-        self.max_height = int(max_height)
+    def __init__(self, handle=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         
-        self._rect = ueye.IS_RECT()
-        
-        if value == None:
-            self.set([0, 0, self.max_width, self.max_height])
+        if not isinstance(handle, type(None)):
+            self.handle, self._handle = validate_handle(handle)
         else:
-            validated_aoi = validate_aoi(value, self.max_width, self.max_height)
-            self.set(validated_aoi)
+            self.handle = None
+            self._handle = None
+        self.units = ureg.px
+        self.inverse_y = True
     
     def __getitem__(self, idx):
         if isinstance(idx, int):
             if idx == 0:
-                return self.x
+                return int(self.xmin.to(ureg.px).magnitude)
             elif idx == 1:
-                return self.y
+                return int(self.ymin.to(ureg.px).magnitude)
             elif idx == 2:
-                return self.width
+                return int(self.width.to(ureg.px).magnitude)
             elif idx == 3:
-                return self.height
+                return int(self.height.to(ureg.px).magnitude)
             else:
                 raise IndexError('Index exceeds AOI elements [x, y, width, height].')
         else:
@@ -170,9 +161,9 @@ class AOI():
     def __setitem__(self, idx, value):
         if isinstance(idx, int):
             if idx == 0:
-                self.x = value
+                self.xmin = value
             elif idx == 1:
-                self.y = value
+                self.ymin = value
             elif idx == 2:
                 self.width = value
             elif idx == 3:
@@ -184,84 +175,48 @@ class AOI():
         
     def __call__(self, value = None):
         if value == None:
-            return self.to_list()
+            return self.limits
         else:
-            self.set(value)
+            self.limits = value
     
-    def _write_to_camera(self):
+    def write_to_camera(self):
+        rect = ueye.IS_RECT()
+        rect.s32X.value = int(self._xmin.to(ureg.px).magnitude)
+        rect.s32Y.value = int(self._ymin.to(ureg.px).magnitude)
+        rect.s32Width.value = int(self.width.to(ureg.px).magnitude)
+        rect.s32Height.value = int(self.height.to(ureg.px).magnitude)
+        
         safe_call(self,
                   ueye.is_AOI,
                   self._handle,
                   utils.AOI.IS_AOI_IMAGE_SET_AOI.value,
-                  self._rect,
-                  ueye.sizeof(self._rect))
-    
-    def _sync_with_camera(self):
+                  rect,
+                  ueye.sizeof(rect))
+        
+    def sync_with_camera(self):
+        rect = ueye.IS_RECT()
         safe_call(self,
                   ueye.is_AOI,
                   self._handle,
-                  utils.IS_AOI_IMAGE_GET_AOI.value,
-                  self._rect,
-                  ueye.sizeof(self._rect))
+                  utils.AOI.IS_AOI_IMAGE_GET_AOI.value,
+                  rect,
+                  ueye.sizeof(rect))
         
-        self.x = int(self._rect.s32X)
-        self.y = int(self._rect.s32Y)
-        self.width = int(self._rect.s32Width)
-        self.height = int(self._rect.s32Height)
-    
-    def set(self, value = None):
-        validated_aoi = validate_aoi(value, self.max_width, self.max_height)
-        
-        self.x = validated_aoi[0]
-        self.y = validated_aoi[1]
-        self.width = validated_aoi[2]
-        self.height = validated_aoi[3]
-        
-#        self._write_to_camera()
-    
-    def to_list(self, value):
-        return [self.x, self.y, self.width, self.height]
-    
-    @property
-    def x(self):
-        return self._rect.s32X.value
-    
-    @x.setter
-    def x(self, value):
-        self._rect.s32X.value = int(value)
-    
-    @property
-    def y(self):
-        return self._rect.s32Y.value
-    
-    @y.setter
-    def y(self, value):
-        self._rect.s32Y.value = int(value)
-        
-    @property
-    def width(self):
-        return self._rect.s32Width.value
-    
-    @width.setter
-    def width(self, value):
-        self._rect.s32Width.value = int(value)
-    
-    @property
-    def height(self):
-        return self._rect.s32Height.value
-    
-    @height.setter
-    def height(self, value):
-        self._rect.s32Height.value = int(value)
+        self._xmin = rect.s32X.value * ureg.px
+        self._ymin = rect.s32Y.value * ureg.px
+        self.width = rect.s32Width.value * ureg.px
+        self.height = rect.s32Height.value * ureg.px
+
 
 class CameraInfo(Driver):
     
     _CAMINFO_obj = None
     
-    def __init__(self, handle, CAMINFO_obj = None):
+    def __init__(self, handle, CAMINFO_obj = None, *args, **kwargs):
+        super().__init__()
         
         self.handle, self._handle = validate_handle(handle)
-
+        
         if CAMINFO_obj == None:
             self._CAMINFO_obj = self.get_camera_info(handle = handle)
         elif isinstance(CAMINFO_obj, ueye.CAMINFO):
@@ -343,7 +298,8 @@ class SensorInfo(Driver):
     
     _SENSORINFO_obj = None
     
-    def __init__(self, handle, SENSORINFO_obj = None):
+    def __init__(self, handle, SENSORINFO_obj = None, *args, **kwargs):
+        super().__init__()
         
         self.handle, self._handle = validate_handle(handle)
 
@@ -392,7 +348,7 @@ class SensorInfo(Driver):
         else:
             raise TypeError('SENSORINFO_obj must be pyueye.ueye.SENSORINFO type (if no argument was passed, check if SENSORINFO_obj was instantiated).')
     
-    @Feat(values = utils.SensorID, read_once = True)
+    @Feat(values = utils.SensorID.to_plain_dict(), read_once = True)
     def sensor_id(self, read_once=True):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
@@ -406,7 +362,7 @@ class SensorInfo(Driver):
         
         return self._SENSORINFO_obj.strSensorName.decode('utf-8')
     
-    @Feat(values = uEye_utils.sensor_color_mode._direct, read_once = True)
+    @Feat(values = utils.SensorColorMode.to_plain_dict(), read_once = True)
     def color_mode(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
@@ -427,35 +383,35 @@ class SensorInfo(Driver):
         
         return self._SENSORINFO_obj.nMaxHeight.value
     
-    @Feat(values = uEye_utils.true_false._direct, read_once = True)
+    @Feat(values = utils.TrueFalse.to_plain_dict(), read_once = True)
     def has_master_gain(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
         
         return self._SENSORINFO_obj.bMasterGain.value
      
-    @Feat(values = uEye_utils.true_false._direct, read_once = True)
+    @Feat(values = utils.TrueFalse.to_plain_dict(), read_once = True)
     def has_r_gain(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
         
         return self._SENSORINFO_obj.bRGain.value
     
-    @Feat(values = uEye_utils.true_false._direct, read_once = True)
+    @Feat(values = utils.TrueFalse.to_plain_dict(), read_once = True)
     def has_g_gain(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
         
         return self._SENSORINFO_obj.bGGain.value
     
-    @Feat(values = uEye_utils.true_false._direct, read_once = True)
+    @Feat(values = utils.TrueFalse.to_plain_dict(), read_once = True)
     def has_b_gain(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
         
         return self._SENSORINFO_obj.bBGain.value
     
-    @Feat(values = uEye_utils.true_false._direct, read_once = True)
+    @Feat(values = utils.TrueFalse.to_plain_dict(), read_once = True)
     def has_global_shutter(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
@@ -472,14 +428,17 @@ class SensorInfo(Driver):
 
 class Camera(Driver):
     
-    def __init__(self, handle = 0):
+    def __init__(self, handle = 0, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         
         self.handle, self._handle = validate_handle(handle)
         
         self.initiate()
-        self.sensor_info = SensorInfo(handle = self._handle)
-        self.camera_info = CameraInfo(handle = self._handle)
-        self.aoi = AOI.from_camera(self)
+        self.sensor_info = SensorInfo(handle=self._handle)
+        self.camera_info = CameraInfo(handle=self._handle)
+        
+        sensor_limits = [0, self.sensor_info.max_width, 0, self.sensor_info.max_height]
+        self.aoi = CameraAOI(handle=self._handle, limits=sensor_limits, canvas_limits=sensor_limits, units=ureg.px)
         
         self._mem_pointer = ueye.c_mem_p()
         self._mem_id = ueye.int()
@@ -499,10 +458,11 @@ class Camera(Driver):
     
     @Action()
     def close(self):
-        print('Closing.')
+        self.log_debug('Closing camera...')
         safe_call(self,
                   ueye.is_ExitCamera,
                   self._handle)
+        self.log_debug('Camera closed.')
     
     # Image:
     @Feat(units = 'bits')
@@ -531,12 +491,12 @@ class Camera(Driver):
     def bytedepth(self):
         return int(self.bitdepth/8)
     
-    @Feat(values = uEye_utils.image_color_mode._direct, units = None)
+    @Feat(values = utils.ImageColorMode.to_plain_dict(), units = None)
     def color_mode(self):
         return safe_get(self,
                         ueye.is_SetColorMode,
                         self._handle,
-                        uEye_utils.image_color_mode.IS_GET_COLOR_MODE)
+                        utils.ImageColorMode.IS_GET_COLOR_MODE.value)
     
     @color_mode.setter
     def color_mode(self, value):
@@ -550,7 +510,7 @@ class Camera(Driver):
         
         sensor_color_mode = self.sensor_info.color_mode
         
-        if uEye_utils.sensor_color_mode[sensor_color_mode] == uEye_utils.sensor_color_mode.IS_COLORMODE_BAYER:
+        if utils.SensorColorMode[sensor_color_mode] == utils.SensorColorMode.IS_COLORMODE_BAYER:
             # setup the color depth to the current windows setting   
             bitdepth = ueye.INT()
             color_mode = ueye.INT()
@@ -560,18 +520,18 @@ class Camera(Driver):
                       bitdepth,
                       color_mode)
         
-        elif uEye_utils.sensor_color_mode[sensor_color_mode] == uEye_utils.sensor_color_mode.IS_COLORMODE_CBYCRY:
+        elif utils.SensorColorMode[sensor_color_mode] == utils.SensorColorMode.IS_COLORMODE_CBYCRY:
             # for color camera models use RGB32 mode
-            color_mode = ueye.IS_CM_BGRA8_PACKED
+            color_mode = utils.ImageColorMode.IS_CM_BGRA8_PACKED.value
         
-        elif uEye_utils.sensor_color_mode[sensor_color_mode] == uEye_utils.sensor_color_mode.IS_COLORMODE_MONOCHROME:
+        elif utils.SensorColorMode[sensor_color_mode] == utils.SensorColorMode.IS_COLORMODE_MONOCHROME:
             # for monochrome camera models use Y8 mode
-            color_mode = ueye.IS_CM_MONO8
+            color_mode = utils.ImageColorMode.IS_CM_MONO8.value
         
         else:
             raise ValueError("Invalid sensor color mode '{0:}'".format(sensor_color_mode))
         
-        return uEye_utils.image_color_mode[color_mode]
+        return utils.ImageColorMode(color_mode).name
     
     @Action()
     def set_auto_color_mode(self):
@@ -751,9 +711,7 @@ class Camera(Driver):
     
     
     @Feat(units = 'Hz')
-    def frame_rate(self):
-        self.log_debug('Requesting frame rate...')
-        
+    def frame_rate(self):        
         new_fps = ueye.c_double()
         
         safe_get(self,
@@ -763,9 +721,7 @@ class Camera(Driver):
                  new_fps)
         
         new_fps = new_fps.value * ureg.Hz
-        
-        self.log_debug('Got frame rate: {:~}'.format(new_fps))
-        
+                
         return new_fps
     
     @frame_rate.setter
@@ -775,9 +731,7 @@ class Camera(Driver):
             value = value.to('Hz').magnitude
         except:
             pass
-        
-        self.log_debug('Setting frame rate to {} Hz'.format(value))
-        
+                
         fps = ueye.c_double(value)
         new_fps = ueye.c_double()
         
@@ -788,15 +742,11 @@ class Camera(Driver):
                  new_fps)
         
         new_fps = new_fps.value * ureg.Hz
-        
-        self.log_debug('Current frame rate is: {:~}'.format(new_fps))
-        
+                
         return new_fps
     
     @Action()
-    def get_default_frame_rate(self):
-        self.log_debug('Requested default frame rate...')
-        
+    def get_default_frame_rate(self):        
         default_fps = ueye.c_double()
         
         safe_get(self,
@@ -806,14 +756,11 @@ class Camera(Driver):
                  default_fps)
         
         default_fps = default_fps.value * ureg.Hz
-        
-        self.log_debug('Default frame rate is: {:~}'.format(default_fps))
-        
+                
         return default_fps
     
     @Action()
     def get_frame_time_range(self):
-        self.log_debug('Requesting frame time range...')
         
         frame_time_min = ueye.c_double()
         frame_time_max = ueye.c_double()
@@ -829,15 +776,11 @@ class Camera(Driver):
         frame_time_min = frame_time_min.value * ureg.s
         frame_time_max = frame_time_max.value * ureg.s
         frame_time_inc = frame_time_inc.value * ureg.s
-        
-        self.log_debug('Got frame time range: min = {}, max = {}, increment = {}'.format(frame_time_min, frame_time_max, frame_time_inc))
 
         return frame_time_min, frame_time_max, frame_time_inc
     
     @Action()
-    def get_frame_rate_list(self):
-        self.log_debug('Requesting list of frame rate values...')
-        
+    def get_frame_rate_list(self):        
         length_min, length_max, length_inc = self.get_frame_time_range()
         length_min = length_min.to('s').magnitude
         length_max = length_max.to('s').magnitude
@@ -845,14 +788,10 @@ class Camera(Driver):
         
         fps = np.sort(1/np.arange(length_min, length_max + length_inc, length_inc)) * ureg.Hz
         
-        self.log_debug('Returned {} allowed values: min = {:~}, max = {:~}, increment: non-linear'.format(len(fps), min(fps), max(fps)))
-        
         return fps
     
     @Feat(units = 'ms')
-    def exposure(self):
-        self.log_debug('Requesting current exposure...')
-        
+    def exposure(self):        
         exposure = ueye.c_double()
         
         safe_call(self,
@@ -862,7 +801,6 @@ class Camera(Driver):
                   exposure,
                   8)
         
-        self.log_debug('Got exposure: {} ms'.format(exposure.value))
         return exposure.value
     
     @exposure.setter
@@ -872,9 +810,7 @@ class Camera(Driver):
             value = value.to('ms').magnitude
         except:
             pass
-        
-        self.log_debug('Setting exposure value to: {} ms...'.format(value))
-        
+                
         exposure = ueye.c_double(value)
         
         safe_set(self,
@@ -883,13 +819,9 @@ class Camera(Driver):
                  utils.Exposure.IS_EXPOSURE_CMD_SET_EXPOSURE.value,
                  exposure,
                  8)
-        
-        self.log_debug('Current exposure value is: {} ms'.format(exposure.value))
-    
+            
     @Action()
-    def get_exposure_range(self):
-        self.log_debug('Requesting exposure range...')
-        
+    def get_exposure_range(self):        
         exposure_min = ueye.c_double()
         exposure_max = ueye.c_double()
         exposure_inc = ueye.c_double()
@@ -919,14 +851,10 @@ class Camera(Driver):
         exposure_max = exposure_max.value * ureg.ms
         exposure_inc = exposure_inc.value * ureg.ms
         
-        self.log_debug('Got exposure range: min = {}, max = {}, increment = {}'.format(exposure_min, exposure_max, exposure_inc))
-        
         return exposure_min, exposure_max, exposure_inc
     
     @Action()
-    def get_exposure_list(self):
-        self.log_debug('Requesting list of exposure values...')
-        
+    def get_exposure_list(self):        
         exposure_min, exposure_max, exposure_inc = self.get_exposure_range()
         exposure_min = exposure_min.to('ms').magnitude
         exposure_max = exposure_max.to('ms').magnitude
@@ -934,14 +862,10 @@ class Camera(Driver):
         
         exposure_list = np.arange(exposure_min, exposure_max + exposure_inc, exposure_inc) * ureg.ms
         
-        self.log_debug('Returned {} allowed values: min = {:~}, max = {:~}, increment = {:~}'.format(len(exposure_list), exposure_min * ureg.ms, exposure_max * ureg.ms, exposure_inc * ureg.ms))
-        
         return exposure_list
     
     @Action()
-    def get_default_exposure(self):
-        self.log_debug('Requesting default exposure...')
-        
+    def get_default_exposure(self):        
         exposure_default = ueye.c_double()
         
         safe_call(self,
@@ -953,21 +877,20 @@ class Camera(Driver):
         
         exposure_default = exposure_default.value * ureg.ms
         
-        self.log_debug('Default exposure: {:~}'.format(exposure_default))
-        
         return exposure_default
     
     # Acquisition:
-    @Feat(values = uEye_utils.trigger._direct)
+    @Feat(values = utils.Trigger.to_plain_dict())
     def trigger(self):
         return safe_get(ueye.is_SetExternalTrigger,
                         self._handle,
-                        uEye_utils.trigger.IS_GET_EXTERNALTRIGGER)
+                        utils.Trigger.IS_GET_EXTERNALTRIGGER.value)
+    
     @trigger.setter
     def trigger(self, value):
         safe_set(ueye.is_SetExternalTrigger,
                  self._handle,
-                 uEye_utils.trigger[value])
+                 utils.Trigger[value].value)
     
     @Action()
     def capture_video(self, timeout):
@@ -977,12 +900,12 @@ class Camera(Driver):
                   self._handle,
                   timeout)
     
-    @Feat(values = utils.DisplayMode)
+    @Feat(values = utils.DisplayMode.to_plain_dict())
     def display_mode(self):
         return safe_get(self,
                         ueye.is_SetDisplayMode,
                         self._handle,
-                        uEye_utils.display_mode.IS_GET_DISPLAY_MODE)
+                        utils.DisplayMode.IS_GET_DISPLAY_MODE.value)
     
     @display_mode.setter
     def display_mode(self, value):
@@ -990,7 +913,6 @@ class Camera(Driver):
                   ueye.is_SetDisplayMode,
                   self._handle,
                   value)
-        
     
     @Action()
     def get_frame(self):
@@ -1001,7 +923,7 @@ class Camera(Driver):
                              self.aoi[2],
                              copy=False)
         
-        return np.reshape(data, (self.aoi.height, self.aoi.width))
+        return np.reshape(data, (int(self.aoi.height.magnitude), int(self.aoi.width.magnitude)))
     
     @Action()
     def continuous_acquire(self):
