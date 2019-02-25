@@ -11,7 +11,7 @@ from scipy.interpolate import interp1d
 
 from enum import Enum, IntEnum, IntFlag, Flag, unique, auto
 
-from re import split
+from re import split, sub
 
 import os, sys, errno
 
@@ -744,6 +744,11 @@ class AOI2D(QtCore.QObject):
     _D_CANVAS_YMIN = 0
     _D_CANVAS_YMAX = 0
     
+    class _CONDITIONS(Enum):
+        ANY = auto()
+        EVEN = auto()
+        ODD = auto()
+    
     limits_changed = QtCore.pyqtSignal(object)
     
     class Validators:
@@ -768,6 +773,8 @@ class AOI2D(QtCore.QObject):
                 if name in ['inverse_x', 'inverse_y']:
                     # Conversion to bool:
                     value = bool(value)
+                elif name == "condition":
+                    pass
                 else:
                     # Universal conversion to pint quantity
                     try:
@@ -798,6 +805,19 @@ class AOI2D(QtCore.QObject):
                             raise ValueError('Area limits value must be a four element numpy or pint array with structure [xmin, xmax, ymin, ymax]')
                     except AttributeError:
                             raise ValueError('Area limits value must be a four element numpy or pint array with structure [xmin, xmax, ymin, ymax]')
+                
+                if name == "condition":
+                    # Restrictins validation
+                    if isinstance(value, type(None)):
+                        value = self._CONDITIONS.ANY
+                    elif isinstance(value, str):
+                        value = self._CONDITIONS[value.upper()]
+                    elif isinstance(value, int):
+                        value = self._CONDITIONS(value)
+                    elif isinstance(value, type(self._CONDITIONS.ANY)):
+                        pass
+                    else:
+                        raise TypeError("Restriction value must be either a string, a integer or a enum element indicating a valid restriction")
                 
                 # If value equals already set, do nothing
                 if name in ['inverse_x', 'inverse_y', 'xmin', 'xmax', 'ymin', 'ymax']:
@@ -992,7 +1012,47 @@ class AOI2D(QtCore.QObject):
             
             return modificator
         
-    def __init__(self, limits=None, canvas_limits=None, units=None, inverse_x=False, inverse_y=False):
+        @classmethod
+        def impose_condition(self, func):
+            """
+            
+            """
+            
+            @wraps(func)
+            def modificator(self, value):
+                
+                name = func.__name__
+                modify = False # Booelan indicating if conditions for modificator to generate an alterate function are satisfied
+                
+                if name in ['xmin','xmax','ymin','ymax'] and self.condition != self._CONDITIONS.ANY:
+                    axis = name[0]
+                    side = name[1:]
+                    conj_side = 'min' if side=='max' else 'max'
+                    
+                    plain_value = value.to(self.units).magnitude
+                    conj_value = self.__getattribute__(axis+conj_side).to(self.units).magnitude
+                    
+                    if self.condition == self._CONDITIONS.EVEN and np.abs(plain_value-conj_value)%2 != 0:
+                        modify = True
+                    
+                    if self.condition == self._CONDITIONS.ODD and np.abs(plain_value-conj_value)%2 != 1:
+                        modify = True
+                    
+                    if modify:
+                        def alt_func(self, value, axis):
+                            func(self, value)
+                            if axis == "x":
+                                self.width = self.width + 1*self.units
+                            if axis == "y":
+                                self.height = self.height + 1*self.units
+                        
+                        return alt_func(self, value, axis)
+                
+                return func(self, value)
+            
+            return modificator
+        
+    def __init__(self, limits=None, canvas_limits=None, units=None, inverse_x=False, inverse_y=False, condition=None):
         super().__init__()
         
         self.canvas = None
@@ -1003,6 +1063,7 @@ class AOI2D(QtCore.QObject):
         self._ymax = self._D_YMAX * self._D_UNITS
         self._inverse_x = False
         self._inverse_y = False
+        self._condition = self._CONDITIONS.ANY
         
         if isinstance(units, type(None)):
             self.units = self._D_UNITS
@@ -1026,6 +1087,8 @@ class AOI2D(QtCore.QObject):
                 self.limits = self.canvas.limits
         else:
             self.limits = limits
+        
+        self.condition = condition
     
     @property
     def inverse_x(self):
@@ -1048,12 +1111,22 @@ class AOI2D(QtCore.QObject):
         self.limits = self.limits
     
     @property
+    def condition(self):
+        return self._condition
+    
+    @condition.setter
+    @Validators.value
+    def condition(self, value):
+        self._condition = value
+    
+    @property
     @Modificators.inverse_axis_getter
     def xmin(self):
         return self._xmin
     
     @xmin.setter
     @Validators.value
+    @Modificators.impose_condition
     @Modificators.inverse_axis
     @Validators.canvas
     def xmin(self, value):
@@ -1067,6 +1140,7 @@ class AOI2D(QtCore.QObject):
     
     @xmax.setter
     @Validators.value
+    @Modificators.impose_condition
     @Modificators.inverse_axis
     @Validators.canvas
     def xmax(self, value):
@@ -1080,6 +1154,7 @@ class AOI2D(QtCore.QObject):
     
     @ymin.setter
     @Validators.value
+    @Modificators.impose_condition
     @Modificators.inverse_axis
     @Validators.canvas
     def ymin(self, value):
@@ -1093,6 +1168,7 @@ class AOI2D(QtCore.QObject):
     
     @ymax.setter
     @Validators.value
+    @Modificators.impose_condition
     @Modificators.inverse_axis
     @Validators.canvas
     def ymax(self, value):
@@ -1307,7 +1383,9 @@ class Spectrum(QtCore.QObject):
             
             # Validate sizes
             if x.ndim != 0 and y.ndim != 0:
-                if x.size != y.shape[1]:
+                if y.ndim == 1 and x.size != y.size:
+                    raise ValueError("Spectrum x and y data sizes must match.")
+                elif y.ndim == 2 and x.size != y.shape[1]:
                     raise ValueError("Spectrum x and y data sizes must match.")
             
             self._x = x
@@ -1619,7 +1697,6 @@ class Spectrum(QtCore.QObject):
                 zeros_right = np.zeros((spectrum.y.shape[0], pad_size_right))
 #                print(zeros_left.shape, spectrum.y[:, slc].shape, zeros_right.shape)
                 
-                print(slc)
                 spectrum._y = np.hstack((zeros_left, spectrum.y[:, slc], zeros_right))
                 spectrum._x = calibrated_x
                 
@@ -1835,29 +1912,29 @@ class Spectrum(QtCore.QObject):
         # Get column names
         names = split(SEP, header[-1])
         for index in range(len(names)):
-            names[index] = names[index].lower().replace(NL, "")
+            names[index] = sub(NL+"|| \[.*\]", "", names[index].lower())
         
         # Import data and initialize return
         data = np.loadtxt(fname=path, dtype=float, comments="#", delimiter=SEP)
-        raw_buffer_size = data.shape[1] - len(names) + 1
+#        raw_buffer_size = data.shape[1] - len(names) + 1
         
         spectrum = cls()
         
         if "wavelength" in names:
-            wavelength = data[:, names.index("wavelength")]
+            wavelength = data[:, names.index("wavelength")].flatten()
         else:
             wavelength = None
         if "processed" in names:
-            spectrum.processed = spectrum._RawSpectrum(wavelength, data[:, names.index("processed")])
-        if "raw" in names:
-            slc = slice(names.index("raw"), names.index("raw") + raw_buffer_size)
-            spectrum.raw = spectrum._RawSpectrum(wavelength, data[:, slc].transpose(), buffer_size=raw_buffer_size)
+            spectrum.processed = spectrum._RawSpectrum(wavelength, data[:, names.index("processed")].flatten())
         if "dark" in names:
-            dark = data[:, raw_buffer_size+names.index("dark")-1]
+            dark = data[:, names.index("dark").flatten()]
             spectrum.dark = spectrum._RawSpectrum(wavelength, dark)
         if "reference" in names:
-            spectrum.reference = spectrum._RawSpectrum(wavelength, data[:, raw_buffer_size+names.index("reference")])
-        
+            spectrum.reference = spectrum._RawSpectrum(wavelength, data[:, names.index("reference")].flatten())
+        if "raw" in names:
+            slc = slice(names.index("raw"), names.index("raw") + props["buffer_size"])
+            spectrum.raw = spectrum._RawSpectrum(wavelength, data[:, slc].transpose(), buffer_size=props["buffer_size"])
+
         return spectrum
 
 

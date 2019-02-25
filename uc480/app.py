@@ -139,16 +139,12 @@ class CameraControl(Backend):
     def set_aoi(self, limits):
         self.camera.aoi.limits = limits
         self.camera.aoi.write_to_camera()
-        self.camera.allocate_memory()
-        self.camera.set_memory()
         
         self.aoi_changed.emit(self.camera.aoi.limits)
     
     def reset_aoi(self):
         self.camera.aoi.reset_limits()
         self.camera.aoi.write_to_camera()
-        self.camera.allocate_memory()
-        self.camera.set_memory()
         
         self.aoi_changed.emit(self.camera.aoi.limits)
     

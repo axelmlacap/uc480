@@ -130,14 +130,17 @@ class CameraAOI(AOI2D):
         max_width = int(camera.sensor_info.max_width)
         max_height = int(camera.sensor_info.max_height)
         
-        return cls(camera.handle, limits=[0,max_width,0,max_height], canvas_limits=[0,max_width,0,max_height], units=ureg.px)
+        return cls(camera, limits=[0,max_width,0,max_height], canvas_limits=[0,max_width,0,max_height], units=ureg.px)
     
-    def __init__(self, handle=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, parent=None, *args, **kwargs):
+        super().__init__(condition="even", *args, **kwargs)
         
-        if not isinstance(handle, type(None)):
-            self.handle, self._handle = validate_handle(handle)
+        if not isinstance(parent, type(None)):
+            self.parent = parent
+            self.handle = parent.handle
+            self._handle = parent._handle
         else:
+            self.parent = None
             self.handle = None
             self._handle = None
         self.units = ureg.px
@@ -185,6 +188,12 @@ class CameraAOI(AOI2D):
         rect.s32Y.value = int(self._ymin.to(ureg.px).magnitude)
         rect.s32Width.value = int(self.width.to(ureg.px).magnitude)
         rect.s32Height.value = int(self.height.to(ureg.px).magnitude)
+        
+        self.parent.allocate_memory(width=rect.s32Width.value, height=rect.s32Height.value)
+        self.parent.set_memory()
+        
+        print([rect.s32X.value, rect.s32Y.value, rect.s32Width.value, rect.s32Height.value])
+        print(ueye.sizeof(rect))
         
         safe_call(self,
                   ueye.is_AOI,
@@ -438,7 +447,7 @@ class Camera(Driver):
         self.camera_info = CameraInfo(handle=self._handle)
         
         sensor_limits = [0, self.sensor_info.max_width, 0, self.sensor_info.max_height]
-        self.aoi = CameraAOI(handle=self._handle, limits=sensor_limits, canvas_limits=sensor_limits, units=ureg.px)
+        self.aoi = CameraAOI(parent=self, limits=sensor_limits, canvas_limits=sensor_limits, units=ureg.px)
         
         self._mem_pointer = ueye.c_mem_p()
         self._mem_id = ueye.int()

@@ -14,3 +14,5 @@ To do
 				  Cambiar el checkbox "enable" por un botón tipo start/stop
 				  Agregar alerta si ningún checkbox (processed, reference, dark, raw) está seleccionado
 8.	Que los widgets de la barra lateral puedan expandirse/contraerse
+9.	[CameraControl] Admitir tiempo de exposición automático a partir de evitar que la cámara sature
+9.	[SpectraAnalyzer] Incluir monitor de timing (tiempo de adquisición, tiempo de procesado, overload, frames perdidos, etc.)
