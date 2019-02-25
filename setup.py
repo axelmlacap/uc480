@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from setuptools import setup
+
+from setuptools import setup, find_packages
 
 setup(name='uc480',
       version='0.1',
@@ -8,11 +9,12 @@ setup(name='uc480',
       author='Axel Lacapmesure',
       author_email='axel.lacapmesure@fi.uba.ar',
       license='',
-      packages=['uc480'],
-      install_requires=[
-          'pyueye',
-          'numpy',
-          'lantzdev[full]',
-          'enum'
-      ],
+      packages=find_packages(),
+#      install_requires=[
+#          'pyueye',
+#          'numpy',
+#          'lantzdev[full]',
+#          'enum',
+#          'numpy'
+#      ],
       zip_safe=False)

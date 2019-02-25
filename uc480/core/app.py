@@ -1,45 +1,26 @@
+# -*- coding: utf-8 -*-
 
-import time
-
-from datetime import datetime
-
-import errno, os, sys
+from uc480.core.driver import Camera
+from uc480.utilities.aoi import AOI2D
+from uc480.utilities.spectrum import Spectrum
+from uc480.utilities.save import SaveManager
+from uc480.utilities.func import get_layout0, file_dialog_save
 
 import numpy as np
 
-from PyQt5 import QtWidgets
 from pyqtgraph import ImageView, PlotWidget
 
 from re import split
 
-from copy import deepcopy
-
-from enum import Enum
-
-import tkinter as tk
-from tkinter import filedialog
+from time import monotonic
 
 from lantz.core import ureg
 from lantz.qt.app import Backend, Frontend, InstrumentSlot, QtCore
 from lantz.qt.app import BackendSlot
-from lantz.qt.utils.qt import QtGui
+#from lantz.qt.utils.qt import QtGui
 #from lantz.qt.blocks import ChartUi, VerticalUi
 
-from driver import Camera
-from utilities import AOI2D, Spectrum, SaveManager, file_dialog_save
-
-
 Q = ureg.Quantity
-
-def get_layout0(vertical):
-
-    layout = QtGui.QVBoxLayout() if vertical else QtGui.QHBoxLayout()
-
-    layout.setSpacing(0)
-    layout.setContentsMargins(0, 0, 0, 0)
-
-    return layout
-
 
 class CameraControl(Backend):
     
@@ -90,7 +71,7 @@ class CameraControl(Backend):
             self.timer.start()
         
     def acquire(self):
-        now = time.monotonic() * ureg.ms
+        now = monotonic() * ureg.ms
         image = self.camera.get_frame() / self.averages
         
         for idx in range(self.averages-1):
@@ -517,7 +498,7 @@ class SpectraAnalyzer(Backend):
     
     def from_image(self, image, timestamp=None):
         if self.enable:
-            now = time.monotonic() * ureg.ms
+            now = monotonic() * ureg.ms
             
             mean_axis = 0 if self.wavelength_axis=='horizontal' else 1
             y = np.mean(image, axis=mean_axis)
@@ -935,13 +916,7 @@ class SpectraSaveUi(Frontend):
         self.widget.reference.setChecked(value['reference'])
     
     def file_dialog_save(self, title="Guardar archivo", initial_dir="/", filetypes=[("Text files","*.txt")]):
-        tkroot = tk.Tk()
-        
-        path = filedialog.asksaveasfilename(title=title,
-                                            initialdir=initial_dir,
-                                            filetypes=filetypes)
-        tkroot.lift()
-        tkroot.withdraw()
+        path = file_dialog_save(title=title, initial_dir=initial_dir, filetypes=filetypes)
         
         self.widget.path_text.setPlainText(path)
     

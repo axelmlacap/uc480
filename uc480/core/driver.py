@@ -1,57 +1,18 @@
-#===========================================================================#
-#                                                                           #
-#  Copyright (C) 2006 - 2018                                                #
-#  IDS Imaging Development Systems GmbH                                     #
-#  Dimbacher Str. 6-8                                                       #
-#  D-74182 Obersulm, Germany                                                #
-#                                                                           #
-#  The information in this document is subject to change without notice     #
-#  and should not be construed as a commitment by IDS Imaging Development   #
-#  Systems GmbH. IDS Imaging Development Systems GmbH does not assume any   #
-#  responsibility for any errors that may appear in this document.          #
-#                                                                           #
-#  This document, or source code, is provided solely as an example          #
-#  of how to utilize IDS software libraries in a sample application.        #
-#  IDS Imaging Development Systems GmbH does not assume any responsibility  #
-#  for the use or reliability of any portion of this document or the        #
-#  described software.                                                      #
-#                                                                           #
-#  General permission to copy or modify, but not for profit, is hereby      #
-#  granted, provided that the above copyright notice is included and        #
-#  reference made to the fact that reproduction privileges were granted     #
-#  by IDS Imaging Development Systems GmbH.                                 #
-#                                                                           #
-#  IDS Imaging Development Systems GmbH cannot assume any responsibility    #
-#  for the use or misuse of any portion of this software for other than     #
-#  its intended diagnostic purpose in calibrating and testing IDS           #
-#  manufactured cameras and software.                                       #
-#                                                                           #
-#===========================================================================#
+# -*- coding: utf-8 -*-
 
-# Developer Note: I tried to let it as simple as possible.
-# Therefore there are no functions asking for the newest driver software or freeing memory beforehand, etc.
-# The sole purpose of this program is to show one of the simplest ways to interact with an IDS camera via the uEye API.
-# (XS cameras are not supported)
-#---------------------------------------------------------------------------------------------------------------------------------------
+from uc480.utilities.aoi import AOI2D
+from uc480.utilities import enums
+from uc480.utilities.func import safe_call, safe_get, safe_set, prop_to_int
 
-#Libraries
-from pyueye import ueye
 import numpy as np
-import ctypes
-import sys
-import cv2
 
-import threading
+from pyueye import ueye
 
-from lantz.core import Driver, log, ureg
+from lantz.core import Driver, ureg
 from lantz import Feat, Action
 
-import logging
-log.log_to_screen(logging.DEBUG)
+import ctypes
 
-from utilities import AOI2D
-import utilities as utils
-from utilities import safe_call, safe_get, safe_set
 #---------------------------------------------------------------------------------------------------------------------------------------
 
 def validate_handle(handle, none_return = None):
@@ -76,11 +37,11 @@ def validate_handle(handle, none_return = None):
 def validate_timeout(value):
     if isinstance(value, str):
         try:
-            timeout = utils.Timeout[value].value
+            timeout = enums.Timeout[value].value
         except KeyError:
             raise KeyError("Invalid wait timeout '{0:}'.".format(value))
     elif isinstance(value, int):
-        if value in utils.Timeout.to_plain_dict().values():
+        if value in enums.Timeout.to_plain_dict().values():
             timeout = value
         elif value >= 4 and value <= 429496729:
             timeout = value
@@ -198,7 +159,7 @@ class CameraAOI(AOI2D):
         safe_call(self,
                   ueye.is_AOI,
                   self._handle,
-                  utils.AOI.IS_AOI_IMAGE_SET_AOI.value,
+                  enums.AOI.IS_AOI_IMAGE_SET_AOI.value,
                   rect,
                   ueye.sizeof(rect))
         
@@ -207,7 +168,7 @@ class CameraAOI(AOI2D):
         safe_call(self,
                   ueye.is_AOI,
                   self._handle,
-                  utils.AOI.IS_AOI_IMAGE_GET_AOI.value,
+                  enums.AOI.IS_AOI_IMAGE_GET_AOI.value,
                   rect,
                   ueye.sizeof(rect))
         
@@ -357,7 +318,7 @@ class SensorInfo(Driver):
         else:
             raise TypeError('SENSORINFO_obj must be pyueye.ueye.SENSORINFO type (if no argument was passed, check if SENSORINFO_obj was instantiated).')
     
-    @Feat(values = utils.SensorID.to_plain_dict(), read_once = True)
+    @Feat(values = enums.SensorID.to_plain_dict(), read_once = True)
     def sensor_id(self, read_once=True):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
@@ -371,12 +332,12 @@ class SensorInfo(Driver):
         
         return self._SENSORINFO_obj.strSensorName.decode('utf-8')
     
-    @Feat(values = utils.SensorColorMode.to_plain_dict(), read_once = True)
+    @Feat(values = enums.SensorColorMode.to_plain_dict(), read_once = True)
     def color_mode(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
         
-        return utils.prop_to_int(self._SENSORINFO_obj.nColorMode)
+        return prop_to_int(self._SENSORINFO_obj.nColorMode)
     
     @Feat(units = None, read_once = True)
     def max_width(self):
@@ -392,35 +353,35 @@ class SensorInfo(Driver):
         
         return self._SENSORINFO_obj.nMaxHeight.value
     
-    @Feat(values = utils.TrueFalse.to_plain_dict(), read_once = True)
+    @Feat(values = enums.TrueFalse.to_plain_dict(), read_once = True)
     def has_master_gain(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
         
         return self._SENSORINFO_obj.bMasterGain.value
      
-    @Feat(values = utils.TrueFalse.to_plain_dict(), read_once = True)
+    @Feat(values = enums.TrueFalse.to_plain_dict(), read_once = True)
     def has_r_gain(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
         
         return self._SENSORINFO_obj.bRGain.value
     
-    @Feat(values = utils.TrueFalse.to_plain_dict(), read_once = True)
+    @Feat(values = enums.TrueFalse.to_plain_dict(), read_once = True)
     def has_g_gain(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
         
         return self._SENSORINFO_obj.bGGain.value
     
-    @Feat(values = utils.TrueFalse.to_plain_dict(), read_once = True)
+    @Feat(values = enums.TrueFalse.to_plain_dict(), read_once = True)
     def has_b_gain(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
         
         return self._SENSORINFO_obj.bBGain.value
     
-    @Feat(values = utils.TrueFalse.to_plain_dict(), read_once = True)
+    @Feat(values = enums.TrueFalse.to_plain_dict(), read_once = True)
     def has_global_shutter(self):
         if self._SENSORINFO_obj is None:
             self._SENSORINFO_obj = self.get_sensor_info(handle = self._handle)
@@ -479,17 +440,17 @@ class Camera(Driver):
     
         sensor_color_mode = self.sensor_info.color_mode
         
-        if utils.SensorColorMode[sensor_color_mode] == utils.SensorColorMode.IS_COLORMODE_BAYER:
+        if enums.SensorColorMode[sensor_color_mode] == enums.SensorColorMode.IS_COLORMODE_BAYER:
             # setup the color depth to the current windows setting   
             bitdepth = ueye.INT()
             safe_call(self, ueye.is_GetColorDepth, self._handle, bitdepth, ueye.INT())
             return bitdepth.value
         
-        elif utils.SensorColorMode[sensor_color_mode] == utils.SensorColorMode.IS_COLORMODE_CBYCRY:
+        elif enums.SensorColorMode[sensor_color_mode] == enums.SensorColorMode.IS_COLORMODE_CBYCRY:
             # for color camera models use RGB32 mode
             return 32
         
-        elif utils.SensorColorMode[sensor_color_mode] == utils.SensorColorMode.IS_COLORMODE_MONOCHROME:
+        elif enums.SensorColorMode[sensor_color_mode] == enums.SensorColorMode.IS_COLORMODE_MONOCHROME:
             # for monochrome camera models use Y8 mode
             return 8
         
@@ -500,12 +461,12 @@ class Camera(Driver):
     def bytedepth(self):
         return int(self.bitdepth/8)
     
-    @Feat(values = utils.ImageColorMode.to_plain_dict(), units = None)
+    @Feat(values = enums.ImageColorMode.to_plain_dict(), units = None)
     def color_mode(self):
         return safe_get(self,
                         ueye.is_SetColorMode,
                         self._handle,
-                        utils.ImageColorMode.IS_GET_COLOR_MODE.value)
+                        enums.ImageColorMode.IS_GET_COLOR_MODE.value)
     
     @color_mode.setter
     def color_mode(self, value):
@@ -519,7 +480,7 @@ class Camera(Driver):
         
         sensor_color_mode = self.sensor_info.color_mode
         
-        if utils.SensorColorMode[sensor_color_mode] == utils.SensorColorMode.IS_COLORMODE_BAYER:
+        if enums.SensorColorMode[sensor_color_mode] == enums.SensorColorMode.IS_COLORMODE_BAYER:
             # setup the color depth to the current windows setting   
             bitdepth = ueye.INT()
             color_mode = ueye.INT()
@@ -529,18 +490,18 @@ class Camera(Driver):
                       bitdepth,
                       color_mode)
         
-        elif utils.SensorColorMode[sensor_color_mode] == utils.SensorColorMode.IS_COLORMODE_CBYCRY:
+        elif enums.SensorColorMode[sensor_color_mode] == enums.SensorColorMode.IS_COLORMODE_CBYCRY:
             # for color camera models use RGB32 mode
-            color_mode = utils.ImageColorMode.IS_CM_BGRA8_PACKED.value
+            color_mode = enums.ImageColorMode.IS_CM_BGRA8_PACKED.value
         
-        elif utils.SensorColorMode[sensor_color_mode] == utils.SensorColorMode.IS_COLORMODE_MONOCHROME:
+        elif enums.SensorColorMode[sensor_color_mode] == enums.SensorColorMode.IS_COLORMODE_MONOCHROME:
             # for monochrome camera models use Y8 mode
-            color_mode = utils.ImageColorMode.IS_CM_MONO8.value
+            color_mode = enums.ImageColorMode.IS_CM_MONO8.value
         
         else:
             raise ValueError("Invalid sensor color mode '{0:}'".format(sensor_color_mode))
         
-        return utils.ImageColorMode(color_mode).name
+        return enums.ImageColorMode(color_mode).name
     
     @Action()
     def set_auto_color_mode(self):
@@ -575,6 +536,7 @@ class Camera(Driver):
         else:
             raise TypeError('AOI height must be int type.')
     
+        print(self)
         bitdepth = ueye.INT(self.bitdepth)
         
         safe_call(self,
@@ -632,7 +594,7 @@ class Camera(Driver):
         safe_get(self,
                  ueye.is_PixelClock,
                  self._handle,
-                 utils.PixelClock.IS_PIXELCLOCK_CMD_GET,
+                 enums.PixelClock.IS_PIXELCLOCK_CMD_GET,
                  pixel_clock,
                  ueye.sizeof(pixel_clock))
         
@@ -651,7 +613,7 @@ class Camera(Driver):
         safe_set(self,
                  ueye.is_PixelClock,
                  self._handle,
-                 utils.PixelClock.IS_PIXELCLOCK_CMD_SET,
+                 enums.PixelClock.IS_PIXELCLOCK_CMD_SET,
                  pixel_clock,
                  ueye.sizeof(pixel_clock))
     
@@ -662,7 +624,7 @@ class Camera(Driver):
         safe_call(self,
                   ueye.is_PixelClock,
                   self._handle,
-                  utils.PixelClock.IS_PIXELCLOCK_CMD_GET_RANGE,
+                  enums.PixelClock.IS_PIXELCLOCK_CMD_GET_RANGE,
                   c_array,
                   ueye.sizeof(c_array))
         
@@ -689,7 +651,7 @@ class Camera(Driver):
             safe_call(self,
                       ueye.is_PixelClock,
                       self._handle,
-                      utils.PixelClock.IS_PIXELCLOCK_CMD_GET_NUMBER,
+                      enums.PixelClock.IS_PIXELCLOCK_CMD_GET_NUMBER,
                       n_items,
                       ueye.sizeof(n_items))
             
@@ -698,7 +660,7 @@ class Camera(Driver):
             safe_call(self,
                       ueye.is_PixelClock,
                       self._handle,
-                      utils.PixelClock.IS_PIXELCLOCK_CMD_GET_LIST,
+                      enums.PixelClock.IS_PIXELCLOCK_CMD_GET_LIST,
                       c_array,
                       ueye.sizeof(n_items))
             
@@ -712,7 +674,7 @@ class Camera(Driver):
         
         safe_get(self,
                  ueye.is_PixelClock,
-                 utils.PixelClock.IS_PIXELCLOCK_CMD_GET_DEFAULT,
+                 enums.PixelClock.IS_PIXELCLOCK_CMD_GET_DEFAULT,
                  pixel_clock,
                  ueye.sizeof(pixel_clock))
         
@@ -806,7 +768,7 @@ class Camera(Driver):
         safe_call(self,
                   ueye.is_Exposure,
                   self._handle,
-                  utils.Exposure.IS_EXPOSURE_CMD_GET_EXPOSURE.value,
+                  enums.Exposure.IS_EXPOSURE_CMD_GET_EXPOSURE.value,
                   exposure,
                   8)
         
@@ -825,7 +787,7 @@ class Camera(Driver):
         safe_set(self,
                  ueye.is_Exposure,
                  self._handle,
-                 utils.Exposure.IS_EXPOSURE_CMD_SET_EXPOSURE.value,
+                 enums.Exposure.IS_EXPOSURE_CMD_SET_EXPOSURE.value,
                  exposure,
                  8)
             
@@ -838,21 +800,21 @@ class Camera(Driver):
         safe_call(self,
                   ueye.is_Exposure,
                   self._handle,
-                  utils.Exposure.IS_EXPOSURE_CMD_GET_EXPOSURE_RANGE_MIN.value,
+                  enums.Exposure.IS_EXPOSURE_CMD_GET_EXPOSURE_RANGE_MIN.value,
                   exposure_min,
                   8)
         
         safe_call(self,
                   ueye.is_Exposure,
                   self._handle,
-                  utils.Exposure.IS_EXPOSURE_CMD_GET_EXPOSURE_RANGE_MAX.value,
+                  enums.Exposure.IS_EXPOSURE_CMD_GET_EXPOSURE_RANGE_MAX.value,
                   exposure_max,
                   8)
         
         safe_call(self,
                   ueye.is_Exposure,
                   self._handle,
-                  utils.Exposure.IS_EXPOSURE_CMD_GET_EXPOSURE_RANGE_INC.value,
+                  enums.Exposure.IS_EXPOSURE_CMD_GET_EXPOSURE_RANGE_INC.value,
                   exposure_inc,
                   8)
         
@@ -880,7 +842,7 @@ class Camera(Driver):
         safe_call(self,
               ueye.is_Exposure,
               self._handle,
-              utils.Exposure.IS_EXPOSURE_CMD_GET_EXPOSURE_DEFAULT.value,
+              enums.Exposure.IS_EXPOSURE_CMD_GET_EXPOSURE_DEFAULT.value,
               exposure_default,
               8)
         
@@ -889,17 +851,17 @@ class Camera(Driver):
         return exposure_default
     
     # Acquisition:
-    @Feat(values = utils.Trigger.to_plain_dict())
+    @Feat(values = enums.Trigger.to_plain_dict())
     def trigger(self):
         return safe_get(ueye.is_SetExternalTrigger,
                         self._handle,
-                        utils.Trigger.IS_GET_EXTERNALTRIGGER.value)
+                        enums.Trigger.IS_GET_EXTERNALTRIGGER.value)
     
     @trigger.setter
     def trigger(self, value):
         safe_set(ueye.is_SetExternalTrigger,
                  self._handle,
-                 utils.Trigger[value].value)
+                 enums.Trigger[value].value)
     
     @Action()
     def capture_video(self, timeout):
@@ -909,12 +871,12 @@ class Camera(Driver):
                   self._handle,
                   timeout)
     
-    @Feat(values = utils.DisplayMode.to_plain_dict())
+    @Feat(values = enums.DisplayMode.to_plain_dict())
     def display_mode(self):
         return safe_get(self,
                         ueye.is_SetDisplayMode,
                         self._handle,
-                        utils.DisplayMode.IS_GET_DISPLAY_MODE.value)
+                        enums.DisplayMode.IS_GET_DISPLAY_MODE.value)
     
     @display_mode.setter
     def display_mode(self, value):
@@ -933,119 +895,8 @@ class Camera(Driver):
                              copy=False)
         
         return np.reshape(data, (int(self.aoi.height.magnitude), int(self.aoi.width.magnitude)))
-    
-    @Action()
-    def continuous_acquire(self):
-        
-        vis = Visualization(self)
-        
-        vis.start()
-        input('Press enter to stop.')
-        vis.stop()
-        
-        return vis.data
-    
+
     # Miscellaneous
     @Action()
     def reset_to_default(self):
         safe_call(self, ueye.is_ResetToDefault, self._handle)
-
-
-
-
-
-class Visualization(object):
-    
-    def __init__(self, camera):
-        self.camera = camera
-        self.aoi = camera.aoi
-        
-        self.data = np.zeros((self.aoi.height, self.aoi.width))
-        
-        self.window_name = 'Camera'
-        cv2.namedWindow(winname = self.window_name)
-        cv2.imshow(winname = self.window_name,
-                   mat = self.data)
-        
-#        self.fig = plt.figure()
-#        self.ax = self.fig.add_axes([0,0,1,1])
-#        self.ax.set_axis_off()
-#        plt.imshow(X = self.data,
-#                   axes = self.ax,
-#                   cmap = 'Greys',
-#                   vmin = 0,
-#                   vmax = 255)
-        
-#        self.UI = {}
-#        self.UI['stop_ax'] = self.fig.add_axes([0.02, 0.02, 0.1, 0.05])
-#        self.UI['stop_btn'] = widgets.Button(ax = self.UI['stop_ax'],
-#                                             label = 'Stop',
-#                                             color = '#FF8888',
-#                                             hovercolor = '#FF3333')
-        
-        self.running = False
-        self.update_thread = threading.Thread(target = self.update)
-    
-    def update(self):
-        
-        while self.running:
-            try:
-                self.data = self.camera.get_frame()
-                cv2.imshow(winname = self.window_name,
-                           mat = self.data)
-            
-            except KeyboardInterrupt:
-                self.stop()
-                break
-    
-    def start(self):
-        self.running = True
-#        self.update_thread.setDaemon(True)
-#        self.update_thread.start()
-        self.update()
-    
-    def stop(self):
-        self.running = False
-
-
-
-if __name__ == "__main__":
-    
-    with Camera(1) as c:
-        
-        c.display_mode = utils.DisplayMode.IS_SET_DM_DIB
-        
-        c.allocate_memory()
-        c.set_memory()
-        c.set_auto_color_mode()
-        
-        
-        pc_min, pc_max, pc_inc = c.get_pixel_clock_range()
-        pc = c.get_pixel_clock_list()
-        
-        exposure = c.get_exposure_list()
-        
-        c.capture_video(utils.Timeout.IS_DONT_WAIT)
-        
-#        width = ueye.int()
-#        height = ueye.int()
-#        bitdepth = ueye.int()
-#        pitch = ueye.int()
-#        
-#        nRet = ueye.is_InquireImageMem(c._handle, c._mem_pointer, c._mem_id, width, height, bitdepth, pitch)
-        
-#        print('Getting data.')
-#        
-#        while True:
-#            data = c.get_frame()
-#            cv2.imshow('Camera', data)
-#        
-#            # Press q if you want to end the loop
-#            if cv2.waitKey(1) & 0xFF == ord('q'):
-#                break
-#        
-#        print('Freeing memory.')
-        
-        c.free_memory()
-        
-        print('Finished.')
