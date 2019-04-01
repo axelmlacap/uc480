@@ -5,8 +5,8 @@ To do
 -----
 
 Importantes:
+1.	[FFT] Utilizar ifft en lugar de fft. Reimplementar eje x.
 1.	Implementar correciones en cámara (FPN, salt and pepper) y en espectro (compensar filtros y ¿responsividad?)
-1.	Implementar módulo de FFT
 1.	[SpectrumAnalyzer] Invertir ejes para que, post calibración, los datos queden en longitud de onda crecientes
 
 Secundarias:
