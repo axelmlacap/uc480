@@ -1,5 +1,5 @@
-from uc480.core import Camera
-from uc480.core import CameraControl, CameraSave, SpectraAnalyzer, SpectraSave, FFTAnalyzer, Main, MainUi
+from uc480.core.driver import Camera
+from uc480.core.app import CameraControl, CameraSave, SpectraAnalyzer, SpectraSave, FFTAnalyzer, Main, MainUi, SpectraMainUi
 from uc480.utilities import enums
 
 #from lantz.qt.app import build_qapp

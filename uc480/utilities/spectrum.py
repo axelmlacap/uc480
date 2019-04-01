@@ -344,17 +344,8 @@ class Spectrum(QtCore.QObject):
             last_idx = new_limits[1] - old_limits[1]
         else:
             last_idx = 0
-#        
-#        first_idx = min(0, new_limits[0] - old_limits[0])
-#        last_idx = new_limits[1] - old_limits[1]
-#        first_value = min(max(old_limits[0], new_limits[0]), old_limits[1]-1)
-#        last_value = max(min(old_limits[1]-1, new_limits[1]-1), old_limits[0])
-#        first_idx = (self.x==first_value).nonzero()[0][0]
-#        last_idx = (self.x==last_value).nonzero()[0][0] + 1
+
         slc = slice(int(first_idx), int(last_idx))
-#        print(slc)
-        
-#        print(last_value, last_idx)
         
         # Are you expanding? Pad with zeros
         pad_size_left = min(max(0, int(old_limits[0]-new_limits[0])), new_limits[1]-new_limits[0])
@@ -365,26 +356,9 @@ class Spectrum(QtCore.QObject):
             if not isinstance(spectrum, type(None)):       
                 zeros_left = np.zeros((spectrum.y.shape[0], pad_size_left))
                 zeros_right = np.zeros((spectrum.y.shape[0], pad_size_right))
-#                print(zeros_left.shape, spectrum.y[:, slc].shape, zeros_right.shape)
                 
                 spectrum._y = np.hstack((zeros_left, spectrum.y[:, slc], zeros_right))
                 spectrum._x = calibrated_x
-                
-                
-#                # Are you shrinking? Take slice
-#                if new_limits[0] > old_limits[0] or new_limits[1] < old_limits[1]:
-#                    indices = np.logical_and(self.x >= new_limits[0], self.x < new_limits[1])
-#                    new_y = new_y[:, indices]
-#                
-#                # Are you extending? Pad with zeros
-#                if new_limits[0] < old_limits[0]:
-#                    pad_size_left = int(old_limits[0]-new_limits[0])
-#                    zeros = np.zeros((self.raw._y.shape[0], pad_size_left))
-#                    new_y = np.hstack((zeros, new_y))
-#                if new_limits[1] > old_limits[1]:
-#                    pad_size_right = int(new_limits[1]-old_limits[-1])
-#                    zeros = np.zeros((self.raw._y.shape[0], pad_size_right))
-#                    new_y = np.hstack((new_y, zeros))
         
         self._x = new_x
     

@@ -105,7 +105,7 @@
           </property>
           <property name="minimumSize">
            <size>
-            <width>270</width>
+            <width>290</width>
             <height>0</height>
            </size>
           </property>
@@ -126,7 +126,7 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>252</width>
+                <width>272</width>
                 <height>472</height>
                </rect>
               </property>
@@ -142,10 +142,13 @@
             <verstretch>0</verstretch>
            </sizepolicy>
           </property>
-          <property name="currentIndex">
-           <number>0</number>
+          <property name="tabPosition">
+           <enum>QTabWidget::North</enum>
           </property>
-          <widget class="QWidget" name="image_page" native="true">
+          <property name="currentIndex">
+           <number>2</number>
+          </property>
+          <widget class="QWidget" name="image_page">
            <attribute name="title">
             <string>Image</string>
            </attribute>
@@ -153,6 +156,11 @@
           <widget class="QWidget" name="spectrum_page">
            <attribute name="title">
             <string>Spectrum</string>
+           </attribute>
+          </widget>
+          <widget class="QWidget" name="fft_page">
+           <attribute name="title">
+            <string>FFT</string>
            </attribute>
           </widget>
          </widget>

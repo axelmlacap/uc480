@@ -5,7 +5,7 @@ Created on Thu Dec 13 10:32:43 2018
 @author: Fotonica
 """
 
-from .func import file_dialog_open
+from .func import file_dialog_save
 
 from lantz.qt import QtCore
 from lantz.core import ureg
@@ -15,6 +15,17 @@ import os, sys, errno
 from enum import Enum
 
 from datetime import datetime
+
+class PATH:
+    pass
+
+class TRIGGER_RETURN:
+    def __init__(self, index):
+        self.index = index
+
+class INSTANCE_ATTRIBUTE:
+    def __init__(self, name):
+        self.name = name
 
 class SaveManager(QtCore.QObject):
     
@@ -35,7 +46,7 @@ class SaveManager(QtCore.QObject):
     
     _numerations = ['none', 'count', 'timestamp']
     
-    def __init__(self, callback, signal, stop_condition='count', limit=1, append=['timestamp'], default_ext=".txt", *args, **kwargs):
+    def __init__(self, callback, trigger, stop_condition='count', limit=1, append=['timestamp'], default_ext=".txt", *args, **kwargs):
         super().__init__()
         
         self._default_ext = ""
@@ -50,7 +61,7 @@ class SaveManager(QtCore.QObject):
         self._callback_args = ()
         self._callback_kwargs = {}
         
-        self.signal = signal
+        self.trigger = trigger
         self.callback = callback
         self.callback_args = args
         self.callback_kwargs = kwargs
@@ -59,7 +70,7 @@ class SaveManager(QtCore.QObject):
         self.limit = limit
         self.save_every = 1
         self.count = 0
-        self.signal_emissions = 0
+        self.trigger_count = 0
         self.append = append
         self.default_ext = default_ext
         
@@ -213,7 +224,9 @@ class SaveManager(QtCore.QObject):
     
     @callback_args.setter
     def callback_args(self, value):
-        self._callback_args = value
+        if not isinstance(value, tuple):
+            value = tuple([value])
+        self._callback_args = tuple(value)
         
         self.callback_args_set.emit(value)
     
@@ -227,19 +240,12 @@ class SaveManager(QtCore.QObject):
         
         self.callback_kwargs_set.emit(value)
     
-    def save(self):
-        self.callback(self.path, *self.callback_args, **self.callback_kwargs)
-        
-        self.saved.emit(self.path, self.count, self.run_time)
-        self.update_run_time()
-        self.count += 1
-    
     def start(self):
         if not self._base_path:
             self.set_path()
         
         self.enabled = True
-        self.signal.connect(self.run)
+        self.trigger.connect(self.run)
         self.started.emit()
         
         self.count = 0
@@ -248,19 +254,21 @@ class SaveManager(QtCore.QObject):
     
     def stop(self):
         self.enabled = False
-        self.signal.disconnect(self.run)
+        self.trigger.disconnect(self.run)
         self.stopped.emit()
         
         self.stop_time = datetime.now()
     
-    @QtCore.pyqtSlot()
-    def run(self, *args, **kwargs):
+    def run(self, *trigger_returns):
         if self.enabled:
-            self.signal_emissions += 1
+            self.trigger_count += 1
             self.update_run_time()
             
-            if self.signal_emissions % self.save_every == 0:
-                self.save()
+            if self.trigger_count % self.save_every == 0:
+                callback_args = self.insert_callback_args(trigger_returns)
+                callback_kwargs = self.insert_callback_kwargs(trigger_returns)
+                
+                self.save(callback_args, callback_kwargs)
             
             # Check for stop conditions
             if self._stop_condition == self._stop_conditions.COUNT:
@@ -270,11 +278,45 @@ class SaveManager(QtCore.QObject):
                 if self.run_time >= self.limit:
                     self.stop()
     
+    def save(self, callback_args=None, callback_kwargs=None):
+        self.callback(*callback_args, **callback_kwargs)
+        
+        self.saved.emit(self.path, self.count, self.run_time)
+        self.update_run_time()
+        self.count += 1
+    
     def update_run_time(self):
         if self.start_time:
             self.run_time = (datetime.now() - self.start_time).total_seconds() * ureg.s
         else:
             self.run_time = None
+    
+    def insert_callback_args(self, trigger_returns):
+        callback_args = list(self.callback_args)
+        
+        for index, arg in enumerate(callback_args):
+            if isinstance(arg, PATH):
+                callback_args[index] = self.path
+            elif isinstance(arg, TRIGGER_RETURN):
+                callback_args[index] = trigger_returns[arg.index]
+            elif isinstance(arg, INSTANCE_ATTRIBUTE):
+                callback_args[index] = self.__getattribute__(arg.name)
+        
+        return tuple(callback_args)
+    
+    def insert_callback_kwargs(self, trigger_returns):
+        callback_kwargs = dict(self.callback_kwargs)
+        
+        for index, (key, value) in enumerate(callback_kwargs.items()):
+            if isinstance(value, PATH):
+                callback_kwargs[key] = self.path
+            elif isinstance(value, TRIGGER_RETURN):
+                callback_kwargs[key] = trigger_returns[value.index]
+            elif isinstance(value, INSTANCE_ATTRIBUTE):
+                callback_kwargs[key] = self.__getattribute__(value.name)
+        print(callback_kwargs)
+        
+        return callback_kwargs
     
     @staticmethod
     def get_timestamp():
@@ -285,7 +327,7 @@ class SaveManager(QtCore.QObject):
     @staticmethod
     def file_dialog_save(title="Guardar archivo", initial_dir="/", filetypes=[("Text files","*.txt")]):
         
-        return file_dialog_open(title=title, initial_dir=initial_dir, filetypes=filetypes)
+        return file_dialog_save(title=title, initial_dir=initial_dir, filetypes=filetypes)
     
     @staticmethod
     def split_path(path):
