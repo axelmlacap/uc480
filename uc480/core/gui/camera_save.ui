@@ -271,12 +271,12 @@
     <rect>
      <x>110</x>
      <y>125</y>
-     <width>61</width>
+     <width>31</width>
      <height>21</height>
     </rect>
    </property>
    <property name="text">
-    <string>trigger calls</string>
+    <string>frame</string>
    </property>
   </widget>
   <widget class="QLineEdit" name="trigger">
@@ -337,7 +337,7 @@
     </rect>
    </property>
    <property name="text">
-    <string>Save as</string>
+    <string>Format</string>
    </property>
    <property name="alignment">
     <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>

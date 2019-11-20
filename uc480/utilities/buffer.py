@@ -27,91 +27,16 @@ class BufferEnd(Exception):
     """
     pass
 
-class BufferCore(QtCore.QObject):
-    
-    was_filled = QtCore.pyqtSignal()
-    was_reset = QtCore.pyqtSignal()
-    was_resized = QtCore.pyqtSignal()
-    
-    def __init__(self, length=1):
-        super().__init__()
-        
-        self._length = 1
-        self._index = 0
-        self._count = 0
-        
-        self.length = length
-    
-    def __iter__(self):
-        self._index = 0
-        self._count = 0
-        return self
-    
-    def __next__(self):
-        self.count += 1
-        self.index += 1
-        return self.index
-    
-    def __call__(self):
-        current_index = self._index
-        self.__next__()
-        
-        return current_index
-    
-    @property
-    def index(self):
-        return self._index
-    
-    @index.setter
-    def index(self, value):
-        self._index = int(value % self.length)
-        
-        if self._index == 0 and self._count != 0:
-            self.was_filled.emit()
-    
-    @property
-    def count(self):
-        return self._count
-    
-    @count.setter
-    def count(self, value):
-        self._count = int(value)
-    
-    @property
-    def length(self):
-        return self._length
-    
-    @length.setter
-    def length(self, value):
-        self._length = int(value)
-        self.reset()
-        
-        self.was_resized.emit()
-    
-    def reset(self):
-        self._index = 0
-        self._count = 0
-        
-        self.was_reset.emit()
-    
-    @property
-    def indices_new_first(self):
-        return (self.index-1 - arange(self.length)) % self.length
-    
-    @property
-    def indices_old_first(self):
-        return (arange(self.length) - self.index) % self.length
-
 
 class FIFOBuffer(QtCore.QObject):
     """
     Clase para buffer circular tipo "first-intput, first-output" (FIFO).
     
     Implementa un array de buffer que se accede de forma circular mediante
-    índices de escritura y lectura SEPARADOS. El buffer puede contener
-    cualquier tipo de datos que acepte un array de numpy, pero a la escritura y
-    lectura sólo se accede de forma unidimensional mediante la primer
-    dimensión.
+    índices de escritura y lectura separados. El núcleo del buffer es un array
+    de numpy cuyos elementos son copias idénticas de un objeto inicializador e
+    indexados en la primer dimensión. Además permite segmentar los datos en
+    paquetes e implementa señales de Qt para la comunicación externa.
     
     Parameters
     ----------
@@ -125,33 +50,34 @@ class FIFOBuffer(QtCore.QObject):
     init_object
         Clase o instancia del objeto que se utilizará para construir el buffer.
         El buffer consistirá en un ndarray de numpy (cuyo largo está
-        determinado por length) que contenga copias del init_object.
+        determinado por length) que contenga copias del init_object. Por
+        defecto, float.
     overrun_policy : {'error', 'skip', 'silent_skip', 'none'} or callable
         Define cómo tratar los eventos de buffer overrun. Acepta un string
         indicando alguna de las configuraciones posibles o bien una función
-        exterba personalizada. Dicha función debe tomar como único argumento la
-        propia instancia de FIFOBuffer. Por defecto, toma el valor 'error'.
+        externa personalizada. Dicha función debe tomar como único argumento la
+        propia instancia de FIFOBuffer.
         Las configuraciones posibles son:
             'error': Suma el evento al contador interno y levanta una excepción
                      tipo BufferOverrun
             'skip': Suma el evento al contador interno y levana una advertencia
-            'silent_skip': Suma el evento al contador interno
+            'silent_skip': Suma el evento al contador interno sin dar aviso
             'none': No realiza ninguna acción
             'custom': Configuración cuando a overrun_policy se le pasa un
                       método. Ejecuta el método personalizado pasando como
                       argumento la propia instancia de FIFOBuffer.
+        Por defecto, igual a 'error'.
     end_policy : {'silent_skip', 'error', 'skip', 'none'} or callable
         Define cómo tratar los eventos donde el buffer se llena. Acepta los
         mismos valores que overrun_policy. En el caso de configuración 'error',
-        levanta la excepción BufferEnded. Por defecto toma el valor 
-        'silent_skip'.
+        levanta la excepción BufferEnd. Por defecto, igual a 'silent_skip'.
     
     Raises
     ------
     BufferOverrun
         Cuando el índice de lectura intenta acceder sobre un espacio del buffer
         no escrito. Sólo si la configuración overrun_policy es tipo 'error'.
-    BufferEnded
+    BufferEnd
         Una vez que se escribe el último lugar disponible del buffer. Sólo si
         la configuración end_policy es tipo 'error'.
     
@@ -160,61 +86,77 @@ class FIFOBuffer(QtCore.QObject):
     BufferOverrun
         Cuando el índice de lectura intenta acceder sobre un espacio del buffer
         no escrito. Sólo si la configuración overrun_policy es tipo 'skip'.
-    BufferEnded
+    BufferEnd
         Una vez que se escribe el último lugar disponible del buffer. Sólo si
         la configuración end_policy es tipo 'skip'.
     
     pyQt Signals
     ------------
-    filled
+    filled()
         Cada vez que el índice de escritura llega al final del buffer.
-    packet_filled
+    packet_filled()
         Cada vez que hay un paquete nuevo para leer.
-    ended
+    ended()
         Cuando se intenta leer pero no hay nuevos elementos escritos.
-    overrun
+    overrun()
         Cuando el índice de escritura intenta sobreescribir elementos no
         leídos.
-    reinitialized
+    reinitialized()
         Cuando se reinicia el buffer (los contadores se restablecen y el buffer
         se vacía).
-    resized
+    resized()
         Cuando el largo 'length' del buffer se cambia.
     
     Notes
     -----
     Las funciones para lectura y escritura son los métodos 'read' y 'write'
     respectivamente. Ambos tienen un parámetro opcional 'step' (por defecto
-    igual a 1) que permite leer (escribir) más de un valor (paquete).
+    igual a 1) que permite leer (escribir) más de un valor.
     
-    Los paquetes deben escribirse en arrays cuyo primer índice recorra los
-    distintos elementos del paquete.
+    Para escribir más de un dato a la vez (step mayor a 1) deben indexarse en
+    arrays o iterables cuyo primer índice recorra los distintos elementos.
     
-    La lectura de un único elemento puede hacerse mediante el método __call__()
-    (sin argumentos). La escritura de un único elemento puede hacerse mediante
-    el método __call__(value), donde el argumento 'value' acepta el valor a
-    escribir.
+    La lectura de un único elemento puede hacerse mediante el método 
+    '__call__()' (sin argumentos). La escritura de un único elemento puede
+    hacerse mediante el método '__call__(value)', donde el argumento 'value'
+    acepta el objeto a escribir.
     
-    El valor length debe ser un múltiplo entero del valor packet_length. En
-    caso de que length sea menor, se reemplaza igual a packet_length.
+    El valor 'length' debe ser un múltiplo entero del valor 'packet_length'. En
+    caso de que sea menor, se reemplaza igual a 'packet_length'.
     
-    Los métodos 'read' y 'write' implementan una serie de verificaciones
-    iniciales (como, por ejemplo, que no se quiera leer un índice no escrito,
-    lo cual sería un buffer overrun). Si alguna de estas verificaciones falla,
-    aumentan un contador 'skip' ('_rskip' para escritura, '_wskip' para
-    lectura) de modo que la operación se saltea. De esta forma la operación
-    sólo se ejecuta cuando el contador correspondiente sea cero. El contador se
-    restablece a cero cada vez que la operación se saltea.
+    Al cambiar el largo 'length', el buffer se reinicializa y los elementos
+    guardados hasta el momento se borran. También se emite la señal 'resized'.
     
-    El método __getitem__(key) otorga acceso directo al array del buffer, de
+    Al ejecutar los métodos 'read' y 'write' se realizan una serie de
+    verificaciones iniciales (como, por ejemplo, que no se quiera leer un
+    índice no escrito, lo cual sería un buffer overrun). Si alguna de estas
+    verificaciones falla, aumentan un contador 'skip' ('_rskip' para escritura,
+    '_wskip' para lectura). La operación sólo se lleva a cabo si el contador
+    correspondiente es cero. En caso contrario, la operación se saltea y el
+    contador se restablece a cero para la próxima ejecución.
+    
+    Los métodos 'newest_indices' y 'oldest_indices' devuelven una lista de
+    índices (con valores entre 0 y 'length'-1) ordenados según el órden de
+    escritura.
+    
+    El método '__getitem__(key)' otorga acceso directo al array del buffer, de
     modo que la indexación no es tipo FIFO (por orden de escritura) sino
     absoluta.
     
-    Los métodos 'newest_indices' y 'oldest_indices' devuelven una lista de
-    índices de 0 hasta 'length' según el órden de escritura.
-    
     La clase es iterable para su lectura (VERSIÓN EXPERIMENTAL, HAY QUE REVISAR
     EL CÓDIGO).
+    
+    To do
+    -----
+    - Implementar iterable para escritura.
+    - Implementar parámetros 'default_step' para escritura y lectura de modo
+    que los métodos '__call__', 'write' y 'read' interpreten por defecto los
+    datos a  escribir/leer como paquetes de datos del largo 'default_step'
+    correspondiente.
+    - Implementar mediciones de tiempos de las operaciones de lectura y
+    escritura.
+    - Implementar monitoreo del rendimiento del buffer para así anticipar
+    overruns y fallas.
     
     """
     
@@ -567,8 +509,80 @@ class FIFOBuffer(QtCore.QObject):
         warn("Buffer overrun at {}".format(self))
 
 
-
-
+class BufferCore(QtCore.QObject):
+    
+    was_filled = QtCore.pyqtSignal()
+    was_reset = QtCore.pyqtSignal()
+    was_resized = QtCore.pyqtSignal()
+    
+    def __init__(self, length=1):
+        super().__init__()
+        
+        self._length = 1
+        self._index = 0
+        self._count = 0
+        
+        self.length = length
+    
+    def __iter__(self):
+        self._index = 0
+        self._count = 0
+        return self
+    
+    def __next__(self):
+        self.count += 1
+        self.index += 1
+        return self.index
+    
+    def __call__(self):
+        current_index = self._index
+        self.__next__()
+        
+        return current_index
+    
+    @property
+    def index(self):
+        return self._index
+    
+    @index.setter
+    def index(self, value):
+        self._index = int(value % self.length)
+        
+        if self._index == 0 and self._count != 0:
+            self.was_filled.emit()
+    
+    @property
+    def count(self):
+        return self._count
+    
+    @count.setter
+    def count(self, value):
+        self._count = int(value)
+    
+    @property
+    def length(self):
+        return self._length
+    
+    @length.setter
+    def length(self, value):
+        self._length = int(value)
+        self.reset()
+        
+        self.was_resized.emit()
+    
+    def reset(self):
+        self._index = 0
+        self._count = 0
+        
+        self.was_reset.emit()
+    
+    @property
+    def indices_new_first(self):
+        return (self.index-1 - arange(self.length)) % self.length
+    
+    @property
+    def indices_old_first(self):
+        return (arange(self.length) - self.index) % self.length
 
 
 

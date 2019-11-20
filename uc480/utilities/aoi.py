@@ -524,6 +524,10 @@ class AOI2D(QtCore.QObject):
             self.ymin = self.canvas.ymax - value
     
     @property
+    def shape(self):
+        return (self.height, self.width)
+    
+    @property
     def limits(self):
         return [self.xmin.magnitude, self.xmax.magnitude, self.ymin.magnitude, self.ymax.magnitude] * self.units
     

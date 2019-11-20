@@ -6,29 +6,123 @@ Created on Thu Dec 13 10:32:43 2018
 """
 
 from .func import file_dialog_save
+from .buffer import FIFOBuffer
 
 from lantz.qt import QtCore
 from lantz.core import ureg
 
-import os, sys, errno
+import numpy as np
 
-from enum import Enum
+import os
+import sys
+import errno
+from pathlib import Path
+
+from enum import Enum, IntEnum, IntFlag, auto
 
 from datetime import datetime
 
+
 class PATH:
     pass
+
+
+class DATA:
+    pass
+
 
 class TRIGGER_RETURN:
     def __init__(self, index):
         self.index = index
 
+
 class INSTANCE_ATTRIBUTE:
     def __init__(self, name):
         self.name = name
 
+
+class StopConditions(IntFlag):
+    COUNT = auto()
+    TIME = auto()
+
+
+class Numerations(IntFlag):
+    COUNT = auto()
+    TIMESTAMP = auto()
+
+
+class CallbackModes(IntFlag):
+    SERIAL = auto()
+    PARALLEL = auto()
+
+
 class SaveManager(QtCore.QObject):
-    
+    """
+    Clase para implementar guardado de datos automatizado a partir de signals y slots de Qt.
+
+    Acepta un signal `trigger` que se emite cada vez que hay una muestra disponible. La muestra se almacena en un buffer
+    tipo FIFO hasta llenar un paquete de tamaño configurable, momento en el cual se llama a la función `callback` que
+    guarda los datos de cada muestra individualmente.
+
+    Parameters
+    ----------
+    callback : Callable
+        Función que guarda los datos de cada muestra. En su firma debe incluir parámetros que acepten la ruta del
+        archivo y los datos a guardar de cada muestra (en los argumentos `callback_args` y `callback_kwargs` se
+        especifica el orden en el cual se introducen dichos parámetros).
+    trigger : PyQt5.signal
+        Señal de PyQt5 que indica que una muestra está disponible. En alguno de los returns de cada emisión de la señal
+        debe incluirse los datos de la muestra.
+    index_of_data : int, opcional
+        Índice que indica la posición de los datos de la muestra entre los returns de la emisión del trigger (por
+        defecto: 0).
+    stop_condition : Union[str, int, StopConditions], opcional
+        Criterio de parada determinado por la enumeración StopConditions (por defecto: StopConditions.COUNT, que
+        significa la terminación del proceso de guardado una vez que se alcanza un límite de muestras).
+    limit : float, opcional
+        Valor de límite para determinar el criterio de parada. Si `stop_condition = StopConditions.COUNT`, `limit`
+        indica la cantidad de muestras totales a guardar. Si `stop_condition = StopConditions.TIME`, `limit` indica la
+        cantidad de tiempo en segundos a registrar (por defecto: 1).
+    packet_length : float, opcional
+        Las muestras se guardarán de a grupos (paquetes) de tamaño `packet_length`. Este valor se utiliza para definir
+        el tamaño del buffer: si `callback_mode = CallbackModes.SERIAL`, el buffer tiene el mismo tamaño que los
+        paquetes; si `callback_mode = CallbackModes.PARALLEL`, el tamaño del buffer incluye un determinado overhead dado
+        por el valor de `BUFFER_OVERHEAD_IN_PACKETS` (por defecto: 1).
+    append : Union[str, int, Numerations], opcional
+        Especifica si anexa un sufijo al nombre de archivo (previo a la extensión). Útil para evitar sobrescrituras. Los
+        posibles sufijos están determinados por la enumeración Numerations (por defecto: Numerations.TIMESTAMP).
+    default_ext: str, opcional
+        Extensión del formato de archivos en el cual se guardará la muestra. No está implementado, pero en las clases
+        hijas puede servir para completar el nombre de archivo si este no incluye una extensión.
+    buffer_init, opcional
+        Ejemplo de contenedor de los datos de una única muestra. Permite configurar el buffer como un arreglo de estos
+        contenedores. Debe ser compatible con el tipo de datos que devuelve la señal de `trigger` (por defecto: object,
+        lo cual significa que puede aceptar cualquier tipo de datos).
+    callback_mode : Union[str, int, CallbackModes], opcional
+        Establece si el guardado se ejecuta de forma secuencial respecto a la adquisición de datos (lo cual implica una
+        pausa en la adquisición de datos) o en paralelo (para una adquisición continua). Actualmente no implementado, lo
+        cual significa una escritura en serie.
+
+    Arguments
+    =========
+
+    stop_condition
+    stop_flag
+    limit
+    packet_length
+    save_every
+    single_file
+    buffer
+    buffer_init
+    path
+    append
+    default_ext
+    index_of_data
+    callback_args
+    callback_kwargs
+    callback_mode
+    """
+    added = QtCore.pyqtSignal(object, object)
     saved = QtCore.pyqtSignal(object, object, object)
     started = QtCore.pyqtSignal()
     stopped = QtCore.pyqtSignal()
@@ -40,34 +134,52 @@ class SaveManager(QtCore.QObject):
     callback_args_set = QtCore.pyqtSignal(object)
     callback_kwargs_set = QtCore.pyqtSignal(object)
     
-    class _stop_conditions(Enum):
-        COUNT = 'count'
-        TIME = 'time'
+    BUFFER_OVERHEAD_IN_PACKETS = 5
     
-    _numerations = ['none', 'count', 'timestamp']
-    
-    def __init__(self, callback, trigger, stop_condition='count', limit=1, append=['timestamp'], default_ext=".txt", *args, **kwargs):
+    def __init__(self,
+                 callback,
+                 trigger,
+                 index_of_data=0,
+                 stop_condition=StopConditions.COUNT,
+                 limit=1,
+                 packet_length=1,
+                 append=Numerations.TIMESTAMP,
+                 default_ext=".txt",
+                 buffer_init=object,
+                 single_file=True,
+                 callback_mode=CallbackModes.SERIAL,
+                 *args, **kwargs):
         super().__init__()
-        
-        self._default_ext = ""
+
+        self._stop_condition = StopConditions.COUNT
+        self._limit = 1
+        self._packet_length = 1
+        self._save_every = 1
+        self._single_file = None
+        self._buffer_init = None
+        self._buffer = FIFOBuffer(init_object=self._buffer_init)
         self._base_path = None
         self._folder = None
         self._base_name = None
         self._extension = None
-        self._stop_condition = self._stop_conditions.COUNT
-        self._limit = 1
-        self._save_every = 1
-        self._append = []
+        self._default_ext = ""
+        self._append = Numerations(0)
         self._callback_args = ()
         self._callback_kwargs = {}
+        self._callback_mode = CallbackModes.SERIAL
+
+        self.buffer_init = buffer_init
         
         self.trigger = trigger
+        self.index_of_data = index_of_data
         self.callback = callback
         self.callback_args = args
         self.callback_kwargs = kwargs
         
-        self.stop_condition = self._stop_conditions(stop_condition)
+        self.stop_condition = stop_condition
         self.limit = limit
+        self.packet_length = packet_length
+        self.single_file = single_file
         self.save_every = 1
         self.count = 0
         self.trigger_count = 0
@@ -86,45 +198,22 @@ class SaveManager(QtCore.QObject):
     @stop_condition.setter
     def stop_condition(self, value):
         if isinstance(value, str):
-            value = self._stop_conditions(value.lower())
-        elif isinstance(value, type(self._stop_conditions.COUNT)):
+            value = StopConditions[value.upper()]
+        elif isinstance(value, int):
+            value = StopConditions(value)
+        elif isinstance(value, StopConditions):
             pass
         else:
-            raise TypeError("Value type must be either string or stop_conditions enum.")
+            raise TypeError("Value type must be either a StopConditions enum value, a string or an integer.")
         
+        # Change _stop_condition if value differs from previous value
         if value != self._stop_condition:
             self._stop_condition = value
             self.limit = 1
+            # Refresh append to avoid lack of numeration and file overwriting
             self.append = self.append
             
             self.stop_condition_set.emit(self.stop_condition)
-    
-    @property
-    def limit(self):
-        return self._limit
-    
-    @limit.setter
-    def limit(self, value):
-        if self._stop_condition == self._stop_conditions.COUNT:
-            self._limit = int(value) if value >= 0 else 0
-        elif self._stop_condition == self._stop_conditions.TIME:
-            try:
-                self._limit = value.to('s')
-            except AttributeError:
-                self._limit = float(value) * ureg.s
-        
-        self.limit_set.emit(self._limit)
-    
-    @property
-    def save_every(self):
-        return self._save_every
-    
-    @save_every.setter
-    def save_every(self, value):
-        value = int(value)
-        value = max(value, 1)
-        
-        self._save_every = value
     
     @property
     def append(self):
@@ -133,44 +222,58 @@ class SaveManager(QtCore.QObject):
     @append.setter
     def append(self, value):
         if isinstance(value, type(None)):
-            value = []
+            value = Numerations(0)
         elif isinstance(value, bool):
             if value == False:
-                value = []
+                value = Numerations(0)
             else:
-                raise TypeError("Append value must be a list of strings with valid options")
+                raise TypeError("Append value must be either a Numerations enum value, a string with a valid numeration name, an integer or a list with any of the above types.")
         elif isinstance(value, str):
-            value = [value.lower()]
-        elif not isinstance(value, list):
-            raise TypeError("Append value must be a list of strings with valid options")
+            value = Numerations[value.upper()]
+        elif isinstance(value, int):
+            value = Numerations(value)
+        elif isinstance(value, Numerations):
+            pass
+        elif isinstance(value, list):
+            append = Numerations(0)
+            for v in value:
+                if isinstance(v, type(None)):
+                    append |= Numerations(0)
+                elif isinstance(v, str):
+                    append |= Numerations[v.upper()]
+                elif isinstance(v, int):
+                    append |= Numerations(v)
+                elif isinstance(v, Numerations):
+                    append |= v
+                else:
+                    raise TypeError("Append value must be either a Numerations enum value, a string with a valid numeration name, an integer or a list with any of the above types.")
+            value = append
+        else:
+            raise TypeError("Append value must be either a Numerations enum value, a string with a valid numeration name, an integer or a list with any of the above types.")
         
-        # Validate:
-        for x in value:
-            if x not in self._numerations:
-                raise ValueError("Invalid append value '{}'")
-        
-        # No numeration is allowed only for single file operation
+        # To avoid file overwrite, lack of numeration is allowed only for single file operation
         if not value:
-            if self._stop_condition == self._stop_conditions.TIME:
-                value = ["timestamp"]
-            if self._stop_condition == self._stop_conditions.COUNT and self.limit > 1:
-                value = ["timestamp"]
+            if self._stop_condition == StopConditions.TIME:
+                value = Numerations.TIMESTAMP
+            if self._stop_condition == StopConditions.COUNT and self.limit > 1:
+                value = Numerations.TIMESTAMP
         
         self._append = value
         self.append_set.emit(self._append)
     
     @property
     def path(self):
-        path = os.path.join(self._folder, self._base_name)
+        name = self._base_name
         
-        if "timestamp" in self.append:
-            path += "_" + self.get_timestamp()
-        if "count" in self.append:
-            path += "_" + str(self.count)
+        if self.append & Numerations.TIMESTAMP:
+            name += "_" + self.get_timestamp()
+        if self.append & Numerations.COUNT:
+            name += "_" + str(self.count)
+
+        name += self._extension
+        path = Path(self._folder) / name
         
-        path += self._extension
-        
-        return path
+        return str(path)
     
     @path.setter
     def path(self, value):
@@ -183,13 +286,18 @@ class SaveManager(QtCore.QObject):
             self.base_path_set.emit(self._base_path)
         elif not isinstance(value, str):
             raise TypeError("File path must be a string with a valid path.")
-        elif not self.is_pathname_valid(value):
-            raise ValueError("Invalid file path")
+        # elif not self.is_pathname_valid(value):
+        #     raise ValueError("Invalid file path")
         else:
-            value = value.replace("/","\\")
+            value = Path(value).resolve()
+
+            # if not value.is_file():
+            #     raise ValueError("File path does not point to a file.")
             
-            self._base_path = value
-            self._folder, self._base_name, self._extension, _ = self.split_path(value)
+            self._base_path = str(value)
+            self._folder = value.parent
+            self._base_name = value.stem
+            self._extension = value.suffix
             
             if not self._extension:
                 self._extension = self._default_ext
@@ -219,6 +327,17 @@ class SaveManager(QtCore.QObject):
         self._default_ext = value
     
     @property
+    def index_of_data(self):
+        return self._index_of_data
+    
+    @index_of_data.setter
+    def index_of_data(self, value):
+        if not isinstance(value, int):
+            raise TypeError("Index of data must be int type")
+        
+        self._index_of_data = value
+    
+    @property
     def callback_args(self):
         return self._callback_args
     
@@ -240,21 +359,153 @@ class SaveManager(QtCore.QObject):
         
         self.callback_kwargs_set.emit(value)
     
+    @property
+    def callback_mode(self):
+        return self._callback_mode
+    
+    @callback_mode.setter
+    def callback_mode(self, value):
+        if isinstance(value, CallbackModes):
+            pass
+        elif isinstance(value, str):
+            value = CallbackModes[value]
+        elif isinstance(value, int):
+            value = CallbackModes(value)
+        
+        if value == CallbackModes.PARALLEL:
+            raise NotImplementedError("Parallel callback mode in SaveManager is not yet implemented. Use serial mode instead.")
+        
+        self._callback_mode = value
+
+    def insert_callback_args(self, data):
+        callback_args = list(self.callback_args)
+
+        for index, arg in enumerate(callback_args):
+            if isinstance(arg, PATH):
+                callback_args[index] = self.path
+            if isinstance(arg, DATA):
+                callback_args[index] = data
+            #            elif isinstance(arg, TRIGGER_RETURN):
+            #                callback_args[index] = trigger_returns[arg.index]
+            elif isinstance(arg, INSTANCE_ATTRIBUTE):
+                callback_args[index] = self.__getattribute__(arg.name)
+
+        return tuple(callback_args)
+
+    def insert_callback_kwargs(self, data):
+        callback_kwargs = dict(self.callback_kwargs)
+
+        for index, (key, value) in enumerate(callback_kwargs.items()):
+            if isinstance(value, PATH):
+                callback_kwargs[key] = self.path
+            if isinstance(value, DATA):
+                callback_kwargs[key] = data
+            #            elif isinstance(value, TRIGGER_RETURN):
+            #                callback_kwargs[key] = trigger_returns[value.index]
+            elif isinstance(value, INSTANCE_ATTRIBUTE):
+                callback_kwargs[key] = self.__getattribute__(value.name)
+
+        return callback_kwargs
+
+    @property
+    def limit(self):
+        return self._limit
+
+    @limit.setter
+    def limit(self, value):
+        if self._stop_condition == StopConditions.COUNT:
+            self._limit = int(value) if value >= 0 else 0
+        elif self._stop_condition == StopConditions.TIME:
+            try:
+                self._limit = value.to('s')
+            except AttributeError:
+                self._limit = float(value) * ureg.s
+
+        self.limit_set.emit(self._limit)
+
+    @property
+    def save_every(self):
+        return self._save_every
+
+    @save_every.setter
+    def save_every(self, value):
+        value = int(value)
+        value = max(value, 1)
+
+        self._save_every = value
+
+    @property
+    def single_file(self):
+        return self._single_file
+
+    @single_file.setter
+    def single_file(self, value):
+        self._single_file = bool(value)
+
+    @property
+    def packet_length(self):
+        return self._packet_length
+    
+    @packet_length.setter
+    def packet_length(self, value):
+        if not isinstance(value, int):
+            try:
+                value = int(value)
+            except (ValueError, TypeError):
+                raise TypeError("Packet length must be int type.")
+        
+        self._packet_length = value
+        
+        # Update buffer lengths
+        if self._callback_mode == CallbackModes.SERIAL:
+            self._buffer.packet_length = value
+            self._buffer.length = value
+            self._buffer.init_object = self.buffer_init
+        elif self._callback_mode == CallbackModes.PARALLEL:
+            self._buffer.packet_length = value
+            self._buffer.length = value * self.BUFFER_OVERHEAD_IN_PACKETS
+            self._buffer.init_object = self.buffer_init
+
+    @property
+    def stop_flag(self):
+        count_flag = self._stop_condition == StopConditions.COUNT and self.buffer.write_counter >= self.limit
+        time_flag = self._stop_condition == StopConditions.TIME and self.run_time >= self.limit
+
+        return (count_flag or time_flag)
+
+    @property
+    def buffer(self):
+        return self._buffer
+
+    @property
+    def buffer_init(self):
+        return self._buffer_init
+
+    @buffer_init.setter
+    def buffer_init(self, value):
+        self._buffer_init = value
+        self._buffer.init_object = value
+
+    def add_to_buffer(self, *trigger_returns):
+        self.buffer(trigger_returns[self.index_of_data])
+
     def start(self):
         if not self._base_path:
             self.set_path()
         
-        self.enabled = True
-        self.trigger.connect(self.run)
-        self.started.emit()
-        
         self.count = 0
         self.start_time = datetime.now()
         self.stop_time = None
+        self.enabled = True
+        
+        self.buffer.packet_filled.connect(self.save)
+        self.trigger.connect(self.run)
+        self.started.emit()
     
     def stop(self):
         self.enabled = False
         self.trigger.disconnect(self.run)
+        self.buffer.packet_filled.disconnect(self.save)
         self.stopped.emit()
         
         self.stop_time = datetime.now()
@@ -265,58 +516,49 @@ class SaveManager(QtCore.QObject):
             self.update_run_time()
             
             if self.trigger_count % self.save_every == 0:
-                callback_args = self.insert_callback_args(trigger_returns)
-                callback_kwargs = self.insert_callback_kwargs(trigger_returns)
-                
-                self.save(callback_args, callback_kwargs)
+                self.buffer(trigger_returns[self.index_of_data])
+                self.added.emit(self.buffer.write_counter, self.run_time)
             
-            # Check for stop conditions
-            if self._stop_condition == self._stop_conditions.COUNT:
-                if self.count >= self.limit:
-                    self.stop()
-            elif self._stop_condition == self._stop_conditions.TIME:
-                if self.run_time >= self.limit:
-                    self.stop()
-    
-    def save(self, callback_args=None, callback_kwargs=None):
-        self.callback(*callback_args, **callback_kwargs)
+            # Check for stop condition
+            if self.stop_flag:
+                self.stop()
+                
+                # Save remaining data
+                remaining_length = self.buffer.write_counter - self.buffer.read_counter
+                self.save(remaining_length)
+
+    def save(self, data_length=None):
+        if isinstance(data_length, type(None)):
+            data_length = self._packet_length
         
-        self.saved.emit(self.path, self.count, self.run_time)
-        self.update_run_time()
-        self.count += 1
+        if data_length != 0:
+            data_array = self.buffer.read(data_length)
+
+            if self.single_file and isinstance(data_array, np.ndarray):
+                for data in data_array:
+                    callback_args = self.insert_callback_args(data)
+                    callback_kwargs = self.insert_callback_kwargs(data)
+                    self.callback(*callback_args, **callback_kwargs)
+
+                    self.saved.emit(self.path, self.count, self.run_time)
+                    self.count += 1
+                    self.update_run_time()
+            else:
+                callback_args = self.insert_callback_args(data_array)
+                callback_kwargs = self.insert_callback_kwargs(data_array)
+                self.callback(*callback_args, **callback_kwargs)
+
+                self.saved.emit(self.path, self.count, self.run_time)
+                self.count += 1
+                self.update_run_time()
+
+        self.count = 0
     
     def update_run_time(self):
         if self.start_time:
             self.run_time = (datetime.now() - self.start_time).total_seconds() * ureg.s
         else:
             self.run_time = None
-    
-    def insert_callback_args(self, trigger_returns):
-        callback_args = list(self.callback_args)
-        
-        for index, arg in enumerate(callback_args):
-            if isinstance(arg, PATH):
-                callback_args[index] = self.path
-            elif isinstance(arg, TRIGGER_RETURN):
-                callback_args[index] = trigger_returns[arg.index]
-            elif isinstance(arg, INSTANCE_ATTRIBUTE):
-                callback_args[index] = self.__getattribute__(arg.name)
-        
-        return tuple(callback_args)
-    
-    def insert_callback_kwargs(self, trigger_returns):
-        callback_kwargs = dict(self.callback_kwargs)
-        
-        for index, (key, value) in enumerate(callback_kwargs.items()):
-            if isinstance(value, PATH):
-                callback_kwargs[key] = self.path
-            elif isinstance(value, TRIGGER_RETURN):
-                callback_kwargs[key] = trigger_returns[value.index]
-            elif isinstance(value, INSTANCE_ATTRIBUTE):
-                callback_kwargs[key] = self.__getattribute__(value.name)
-        print(callback_kwargs)
-        
-        return callback_kwargs
     
     @staticmethod
     def get_timestamp():
@@ -325,7 +567,7 @@ class SaveManager(QtCore.QObject):
         return now.strftime('%Y%m%d_%H%M%S.') + str(milis)
     
     @staticmethod
-    def file_dialog_save(title="Guardar archivo", initial_dir="/", filetypes=[("Text files","*.txt")]):
+    def file_dialog_save(title="Guardar archivo", initial_dir="/", filetypes=[("Text files", "*.txt")]):
         
         return file_dialog_save(title=title, initial_dir=initial_dir, filetypes=filetypes)
     
@@ -340,10 +582,10 @@ class SaveManager(QtCore.QObject):
     
     @staticmethod
     def is_pathname_valid(pathname: str) -> bool:
-        '''
+        """
         `True` if the passed pathname is a valid pathname for the current OS;
         `False` otherwise.
-        '''
+        """
         
         ERROR_INVALID_NAME = 123
         

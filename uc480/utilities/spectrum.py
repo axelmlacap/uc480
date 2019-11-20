@@ -27,6 +27,7 @@ from re import split, sub
 class Spectrum(QtCore.QObject):
     
     wavelength_changed = QtCore.pyqtSignal(object)
+    buffer_filled = QtCore.pyqtSignal(object)
     
     class _RawSpectrum(QtCore.QObject):
         
@@ -36,7 +37,7 @@ class Spectrum(QtCore.QObject):
         def __init__(self, x=None, y=None, x_units=None, y_units=None, buffer_size=1):
             super().__init__()
             
-            self.buffer = BufferCore(size=buffer_size)            
+            self.buffer = BufferCore(length=buffer_size)
             
             x = np.array(x, dtype=float)
             y = np.array(y, dtype=float)
@@ -45,7 +46,7 @@ class Spectrum(QtCore.QObject):
             if x.ndim == 0:
                 x = np.array([0, 1], dtype=float)
             if y.ndim == 0:
-                y = np.zeros((self.buffer.size, x.size), dtype=float)
+                y = np.zeros((self.buffer.length, x.size), dtype=float)
             
             # If 1D y value passed, reshape to 2D with wavelength in axis 1
             if y.ndim == 1:
@@ -59,7 +60,7 @@ class Spectrum(QtCore.QObject):
                     raise ValueError("Spectrum x and y data sizes must match.")
             
             self._x = x
-            self._y = np.zeros((self.buffer.size, y.shape[1]))
+            self._y = np.zeros((self.buffer.length, y.shape[1]))
             self.y = y
             self.x_units = x_units if x_units else self.D_X_UNITS
             self.y_units = y_units if y_units else self.D_Y_UNITS
@@ -91,7 +92,7 @@ class Spectrum(QtCore.QObject):
                 self._x = value
                 
                 if value.size != self.y.shape[1]:
-                    self._y = np.zeros((self.buffer.size, value.size), dtype=float)
+                    self._y = np.zeros((self.buffer.length, value.size), dtype=float)
             elif value.ndim > 1:
                 raise ValueError("Spectrum x data must be 1D array-like type.")
         
@@ -123,7 +124,7 @@ class Spectrum(QtCore.QObject):
             return self.__class__(x, y)
         
         def resize_buffer(self, new_size):
-            old_size = self.buffer.size
+            old_size = self.buffer.length
             
             if new_size == old_size:
                 return None
@@ -133,7 +134,7 @@ class Spectrum(QtCore.QObject):
                 indices = np.flip(self.buffer.indices_new_first[0:new_size])
                 self._y = self.y[indices, :]
                 
-                self.buffer.size = new_size
+                self.buffer.length = new_size
                 self.buffer.index = new_size
                 self.buffer.count = new_size
             
@@ -148,7 +149,7 @@ class Spectrum(QtCore.QObject):
                 self._y = np.vstack((old_block, new_block))
                 
                 new_count = min(self.buffer.count, old_size)
-                self.buffer.size = new_size
+                self.buffer.length = new_size
                 self.buffer.index = new_count
                 self.buffer.count = new_count
         
@@ -185,6 +186,8 @@ class Spectrum(QtCore.QObject):
         self.dark = self._RawSpectrum()
         self.reference = self._RawSpectrum()
         self.processed = self._RawSpectrum()
+
+        self.raw.buffer.was_filled.connect(lambda: self.buffer_filled.emit(self))
         
         self.mode = mode
         self.subtract_dark = subtract_dark
@@ -208,7 +211,7 @@ class Spectrum(QtCore.QObject):
     
     @property
     def averages(self):
-        return self.raw.buffer.size
+        return self.raw.buffer.length
     
     @averages.setter
     def averages(self, value):
@@ -221,7 +224,7 @@ class Spectrum(QtCore.QObject):
             value = 1
         
         if not isinstance(self.raw, type(None)):
-            if value != self.raw.buffer.size:
+            if value != self.raw.buffer.length:
                 self.raw.resize_buffer(value)
                 self.average = value > 1
     
@@ -479,16 +482,15 @@ class Spectrum(QtCore.QObject):
             return cls._RawSpectrum(raw.x, np.log10(np.divide(ref.y, raw.y)))
     
     def save(self, path, processed=True, raw=False, dark=False, reference=False, decimals=10):
-        NL = '\n' # Newline character
-        SEP = '\t' # Delimiter/separator character
+        NL = '\n'  # Newline character
+        SEP = '\t'  # Delimiter/separator character
         fmt = '%.'+str(decimals)+'g'
-#        print("Called spectrum.save. Saving: processed {} raw {} dark {} reference {}".format(processed, raw, dark, reference))
-        
+
         header = 'Date: {}'.format(datetime.now()) + NL
         header += 'Mode: {}'.format(self.mode) + NL
         header += 'Normalization: {}'.format(self.normalize) + NL
         header += 'Dark subtraction: {}'.format(self.subtract_dark) + NL
-        header += 'Buffer size: {}'.format(self.raw.buffer.size) + NL
+        header += 'Buffer size: {}'.format(self.raw.buffer.length) + NL
         header += NL
         header += 'Wavelength [{}]'.format(self.raw.x_units)
         

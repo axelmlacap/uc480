@@ -1,0 +1,16 @@
+driver:
+    color_mode: IS_CM_MONO10
+    display_mode: IS_SET_DM_DIB
+    shutter_mode: IS_DEVICE_FEATURE_CAP_SHUTTER_MODE_ROLLING
+    
+    pixel_clock: max
+    frame_rate: max
+    exposure: min
+    blacklevel_mode: IS_AUTO_BLACKLEVEL_OFF
+    blacklevel_offset: 238
+
+#    dark_offset_base_pattern_path: D:\Axel_GDrive\Proyecto OCT\2019-Caracterizacion_camara\2019-08_Caracterizacion_dark\190910_dark_offset.npy
+#    dark_slope_base_pattern_path: D:\Axel_GDrive\Proyecto OCT\2019-Caracterizacion_camara\2019-08_Caracterizacion_dark\190910_dark_slope.npy
+    dark_offset_base_pattern_path: /mnt/Datos/Axel_GDrive/Proyecto OCT/2019-Caracterizacion_camara/2019-08_Caracterizacion_dark/190910_dark_offset.npy
+    dark_slope_base_pattern_path: /mnt/Datos/Axel_GDrive/Proyecto OCT/2019-Caracterizacion_camara/2019-08_Caracterizacion_dark/190910_dark_slope.npy
+    dark_correction: False

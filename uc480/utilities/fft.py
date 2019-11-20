@@ -75,8 +75,8 @@ class FFT(QtCore.QObject):
         value = np.array(value, dtype=float)
         
         if value.ndim == 0:
-            return None
-        if value.ndim == 1:
+            pass
+        elif value.ndim == 1:
             self._x = value
             
             if value.size != self.y.size:
@@ -93,7 +93,7 @@ class FFT(QtCore.QObject):
         value = np.array(value, dtype=float)
         
         if value.ndim == 0:
-            return None
+            pass
         elif value.ndim == 1:
             pass
         elif value.ndim > 1:

@@ -1,0 +1,58 @@
+Instalación
+===========
+
+1. Crear un entorno de Anaconda con sus paquetes por defecto::
+
+    conda create -n oct anaconda
+
+2. Instalar dependencias::
+
+    pip install lantzdev["full"]
+    conda install PyQt5
+    conda install pyqtgraph
+
+3. Instalar PyUeye y drivers de la cámara::
+
+    pip install pyueye
+
+Luego continue con los pasos a seguir según el sistema operativo.
+
+**Windows**
+
+4. Descargar e instalar los drivers provistos por Thorlabs y el visor ThorCam:
+
+  * `SDK y documentación para cámaras serie DCx
+    <https://www.thorlabs.com/software/THO/ThorCam/Programming/DCx_Camera_Interfaces_2018_09.zip>`_ (accedido
+    19/11/2019)
+  * `ThorCam <https://www.thorlabs.com/software/THO/ThorCam/ThorCam_V3.3.1/TSI_Camera_Setup_X64.exe>`_ (accedido
+    19/11/2019)
+
+  Si los links están caídos, intentar la `página de descarga de software para cámaras Thorlabs
+  <https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=ThorCam>`_ (accedido 19/11/2019)
+
+5. Modificar la librería PyUeye para incluir la ruta hacia las .dll provistas por Thorlabs.
+
+  * Primero se debe encontrar el archivo `ueye.py` dentro del directorio del paquete PyUeye. La misma se encuentra en el
+    directorio del entorno de Anaconda (en este caso, `oct`). En Windows, la ruta suele ser::
+
+        'oct/Lib/site-packages/pyueye/ueye.py'
+
+  * Dentro de las primeras líneas del código, cambiar la línea ::
+
+        get_dll_file, _bind = load_dll("ueye_api", ["ueye_api_64", "ueye_api"], "PYUEYE_DLL_PATH")
+
+    por ::
+
+      get_dll_file, _bind = load_dll("uc480_64", ["uc480_64", "uc480_tools_64"], "")
+
+    donde `uc480_64` y `uc480_tools_64` corresponden a los nombres de los archivos creados en las carpetas del sistema
+    operativo durante la instalación del driver.
+
+*Nota*: También debería ser posible instalar los drivers provistos por IDS para Windows, los cuales ya son compatibles
+con el paquete PyUeye por defecto (esto es, no requiere editar el archivo `ueye.py`). Los drivers de IDS pueden
+descargarse desde aquí: <https://en.ids-imaging.com/download-ueye-win64.html>`_
+
+**Linux**
+
+4. Descargar e instalar los drivers provistos por IDS: `IDS Software suite
+   <https://en.ids-imaging.com/download-ueye-lin64.html>`_

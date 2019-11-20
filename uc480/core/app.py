@@ -92,8 +92,13 @@ class MainUi(Frontend):
         self.fft_page.setLayout(layout)
 
 
+class CameraMain(Backend):
+    control_be: CameraControl = BackendSlot
+    camera_save_be: CameraSave = BackendSlot
+
+
 class CameraMainUi(Frontend):
-    backend: Main
+    backend: CameraMain
     
     gui = 'gui/main.ui'
     
@@ -109,6 +114,34 @@ class CameraMainUi(Frontend):
         # Leftbar
         self.l_leftbar = layout = get_layout0(vertical=True)
         layout.addWidget(self.control_ui)
+        layout.addStretch()
+        self.leftbar.setLayout(layout)
+        
+        # Central, page 1
+        self.l_image_page = layout =  get_layout0(vertical=False)
+        layout.addWidget(self.viewer_ui)
+        self.image_page.setLayout(layout)
+
+
+class CameraSaveMainUi(Frontend):
+    backend: CameraMain
+    
+    gui = 'gui/main.ui'
+    
+    # leftbar
+    control_ui: CameraControlUi = CameraControlUi.using('control_be')
+    camera_save_ui: CameraSaveUi = CameraSaveUi.using('camera_save_be')
+    
+    # central
+    viewer_ui: ImageViewerUi = ImageViewerUi.using('control_be')
+    
+    def setupUi(self):
+        super().setupUi()
+        
+        # Leftbar
+        self.l_leftbar = layout = get_layout0(vertical=True)
+        layout.addWidget(self.control_ui)
+        layout.addWidget(self.camera_save_ui)
         layout.addStretch()
         self.leftbar.setLayout(layout)
         

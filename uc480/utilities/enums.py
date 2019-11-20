@@ -8,14 +8,18 @@ Created on Mon Feb 25 12:48:59 2019
 from enum import IntEnum
 
 class EnumMixin:
-    
+
     @classmethod
-    def to_plain_dict(cls):
+    def to_plain_dict(cls, inverse=False):
         dictionary = {}
         for name, enum in cls.__members__.items():
-            dictionary[name] = enum.value
+            if inverse:
+                dictionary[enum.value] = enum
+            else:
+                dictionary[enum] = enum.value
         
         return dictionary
+    
 
 class TrueFalse(EnumMixin, IntEnum):
     TRUE = 1
@@ -403,38 +407,98 @@ class ImageColorMode(EnumMixin, IntEnum):
     IS_CM_ORDER_RGB = 0x0080
     IS_CM_ORDER_MASK = 0x0080
     IS_CM_PREFER_PACKED_SOURCE_FORMAT = 0x4000
+    
+    # Raw modes
     IS_CM_SENSOR_RAW8 = 11
     IS_CM_SENSOR_RAW10 = 33
     IS_CM_SENSOR_RAW12 = 27
     IS_CM_SENSOR_RAW16 = 29
+    
+    # Monochromatic modes
     IS_CM_MONO8 = 6
     IS_CM_MONO10 = 34
     IS_CM_MONO12 = 26
     IS_CM_MONO16 = 28
-    IS_CM_BGR5_PACKED = (3|IS_CM_ORDER_BGR)
-    IS_CM_BGR565_PACKED = (2|IS_CM_ORDER_BGR)
+    
+    # RGB
     IS_CM_RGB8_PACKED = (1|IS_CM_ORDER_RGB)
-    IS_CM_BGR8_PACKED = (1|IS_CM_ORDER_BGR)
     IS_CM_RGBA8_PACKED = (0|IS_CM_ORDER_RGB)
-    IS_CM_BGRA8_PACKED = (0|IS_CM_ORDER_BGR)
     IS_CM_RGBY8_PACKED = (24|IS_CM_ORDER_RGB)
-    IS_CM_BGRY8_PACKED = (24|IS_CM_ORDER_BGR)
+    IS_CM_RGB8_PLANAR = (1|IS_CM_ORDER_RGB|IS_CM_FORMAT_PLANAR)
+    
     IS_CM_RGB10_PACKED = (25|IS_CM_ORDER_RGB)
-    IS_CM_BGR10_PACKED = (25|IS_CM_ORDER_BGR)
     IS_CM_RGB10_UNPACKED = (35|IS_CM_ORDER_RGB)
+    
+    IS_CM_RGB12_PACKED = (30|IS_CM_ORDER_RGB)
+    IS_CM_RGBA12_PACKED = (31|IS_CM_ORDER_RGB)
+    
+    # BGR
+    IS_CM_BGR8_PACKED = (1|IS_CM_ORDER_BGR)
+    IS_CM_BGRA8_PACKED = (0|IS_CM_ORDER_BGR)
+    IS_CM_BGRY8_PACKED = (24|IS_CM_ORDER_BGR)
+    
+    IS_CM_BGR10_PACKED = (25|IS_CM_ORDER_BGR)
     IS_CM_BGR10_UNPACKED = (35|IS_CM_ORDER_BGR)
-    IS_CM_RGB12_UNPACKED = (30|IS_CM_ORDER_RGB)
-    IS_CM_BGR12_UNPACKED = (30|IS_CM_ORDER_BGR)
-    IS_CM_RGBA12_UNPACKED = (31|IS_CM_ORDER_RGB)
-    IS_CM_BGRA12_UNPACKED = (31|IS_CM_ORDER_BGR)
-    IS_CM_JPEG = 32
+    
+    IS_CM_BGR12_PACKED = (30|IS_CM_ORDER_BGR)
+    IS_CM_BGRA12_PACKED = (31|IS_CM_ORDER_BGR)
+    
+    IS_CM_BGR565_PACKED = (2|IS_CM_ORDER_BGR)
+    IS_CM_BGR5_PACKED = (3|IS_CM_ORDER_BGR)
+    
+    # Others
     IS_CM_UYVY_PACKED = 12
     IS_CM_UYVY_MONO_PACKED = 13
     IS_CM_UYVY_BAYER_PACKED = 14
     IS_CM_CBYCRY_PACKED = 23
-    IS_CM_RGB8_PLANAR = (1|IS_CM_ORDER_RGB|IS_CM_FORMAT_PLANAR)
+    IS_CM_JPEG = 32
     IS_CM_ALL_POSSIBLE = 0xFFFF
     IS_CM_MODE_MASK = 0x007F
+
+class BitsPerPixel(EnumMixin, IntEnum):
+    # Raw modes
+    IS_CM_SENSOR_RAW8 = 8
+    IS_CM_SENSOR_RAW10 = 16
+    IS_CM_SENSOR_RAW12 = 16
+    IS_CM_SENSOR_RAW16 = 16
+    
+    # Monochromatic modes
+    IS_CM_MONO8 = 8
+    IS_CM_MONO10 = 16
+    IS_CM_MONO12 = 16
+    IS_CM_MONO16 = 16
+    
+    # RGB
+    IS_CM_RGB8_PACKED = 24
+    IS_CM_RGBA8_PACKED = 32
+    IS_CM_RGBY8_PACKED = 32
+    IS_CM_RGB8_PLANAR = 24
+    
+    IS_CM_RGB10_PACKED = 32
+    IS_CM_RGB10_UNPACKED = 48
+    
+    IS_CM_RGB12_PACKED = 48
+    IS_CM_RGBA12_PACKED = 64
+    
+    # BGR
+    IS_CM_BGR8_PACKED = 24
+    IS_CM_BGRA8_PACKED = 32
+    IS_CM_BGRY8_PACKED = 32
+    
+    IS_CM_BGR10_PACKED = 32
+    IS_CM_BGR10_UNPACKED = 48
+    
+    IS_CM_BGR12_PACKED = 48
+    IS_CM_BGRA12_PACKED = 64
+    
+    IS_CM_BGR565_PACKED = 16
+    IS_CM_BGR5_PACKED = 16
+    
+    # Others
+    IS_CM_UYVY = 32
+    IS_CM_UYVY_MONO = 32
+    IS_CM_UYVY_BAYER = 32
+    IS_CM_CBYCRY_PACKED = 32
 
 class DisplayMode(EnumMixin, IntEnum):
     IS_GET_DISPLAY_MODE = 0x8000
@@ -495,10 +559,12 @@ class AOI(EnumMixin, IntEnum):
     IS_AOI_SEQUENCE_INDEX_AOI_3 = 2
     IS_AOI_SEQUENCE_INDEX_AOI_4 = 4
 
-class Timeout(EnumMixin, IntEnum):
+class VideoCapture(EnumMixin, IntEnum):
     IS_GET_LIVE = 0x8000
     IS_WAIT = 0x0001
     IS_DONT_WAIT = 0x0000
+    IS_FORCE_VIDEO_STOP = 0x4000
+    IS_FORCE_VIDEO_START = 0x4000
 
 class Trigger(EnumMixin, IntEnum):
     IS_GET_EXTERNALTRIGGER = 0x8000
@@ -553,3 +619,79 @@ class PixelClock(EnumMixin, IntEnum):
     IS_PIXELCLOCK_CMD_GET_DEFAULT = 4
     IS_PIXELCLOCK_CMD_GET = 5
     IS_PIXELCLOCK_CMD_SET = 6
+
+class ShutterModes(EnumMixin, IntEnum):
+    IS_DEVICE_FEATURE_CAP_SHUTTER_MODE_ROLLING = 1
+    IS_DEVICE_FEATURE_CAP_SHUTTER_MODE_GLOBAL = 2
+    IS_DEVICE_FEATURE_CAP_SHUTTER_MODE_ROLLING_GLOBAL_START = 64
+    IS_DEVICE_FEATURE_CAP_SHUTTER_MODE_GLOBAL_ALTERNATIVE_TIMING = 128
+
+class Shutter(EnumMixin, IntEnum):
+    IS_DEVICE_FEATURE_CMD_SET_SHUTTER_MODE = 6
+    IS_DEVICE_FEATURE_CMD_GET_SHUTTER_MODE = 7
+    
+    IS_SET_GLOBAL_SHUTTER_ON = 0x0001
+    IS_SET_GLOBAL_SHUTTER_OFF = 0x0000
+    IS_GET_GLOBAL_SHUTTER = 0x0010
+    IS_GET_SUPPORTED_GLOBAL_SHUTTER = 0x0020
+
+class DeviceFeature(EnumMixin, IntEnum):
+    IS_DEVICE_FEATURE_CMD_GET_SUPPORTED_FEATURES = 1
+
+class Blacklevel(EnumMixin, IntEnum):
+    IS_BLACKLEVEL_CMD_GET_CAPS = 1
+    IS_BLACKLEVEL_CMD_GET_MODE_DEFAULT = 2
+    IS_BLACKLEVEL_CMD_GET_MODE = 3
+    IS_BLACKLEVEL_CMD_SET_MODE = 4
+    IS_BLACKLEVEL_CMD_GET_OFFSET_DEFAULT = 5
+    IS_BLACKLEVEL_CMD_GET_OFFSET_RANGE = 6
+    IS_BLACKLEVEL_CMD_GET_OFFSET = 7
+    IS_BLACKLEVEL_CMD_SET_OFFSET = 8
+
+class BlacklevelCaps(EnumMixin, IntEnum):
+    IS_BLACKLEVEL_CAP_SET_AUTO_BLACKLEVEL = 1
+    IS_BLACKLEVEL_CAP_SET_OFFSET = 2
+
+class BlacklevelModes(EnumMixin, IntEnum):
+    IS_AUTO_BLACKLEVEL_OFF = 0
+    IS_AUTO_BLACKLEVEL_ON = 1
+
+class SensorBitDepths(EnumMixin, IntEnum):
+    IS_SENSOR_BIT_DEPTH_AUTO = 0
+    IS_SENSOR_BIT_DEPTH_8_BIT = 1
+    IS_SENSOR_BIT_DEPTH_10_BIT = 2
+    IS_SENSOR_BIT_DEPTH_12_BIT = 4
+
+class SensorBitDepth(EnumMixin, IntEnum):
+    IS_DEVICE_FEATURE_CAP_SENSOR_BIT_DEPTH = 4096
+    IS_DEVICE_FEATURE_CMD_GET_SUPPORTED_SENSOR_BIT_DEPTHS = 41
+    IS_DEVICE_FEATURE_CMD_GET_SENSOR_BIT_DEPTH_DEFAULT = 42
+    IS_DEVICE_FEATURE_CMD_GET_SENSOR_BIT_DEPTH = 43
+    IS_DEVICE_FEATURE_CMD_SET_SENSOR_BIT_DEPTH = 44
+
+class Framerate(EnumMixin, IntEnum):
+    IS_GET_FRAMERATE = 0x8000
+
+class Connectivity(EnumMixin, IntEnum):
+    IS_USB_10 = 0x0001
+    IS_USB_11 = 0x0002
+    IS_USB_20 = 0x0004
+    IS_USB_30 = 0x0008
+    IS_ETHERNET_10 = 0x0080
+    IS_ETHERNET_100 = 0x0100
+    IS_ETHERNET_1000 = 0x0200
+    IS_ETHERNET_10000 = 0x0400
+    IS_USB_LOW_SPEED = 1
+    IS_USB_FULL_SPEED = 12
+    IS_USB_HIGH_SPEED = 480
+    IS_USB_SUPER_SPEED = 4000
+    IS_ETHERNET_10Base = 10
+    IS_ETHERNET_100Base = 100
+    IS_ETHERNET_1000Base = 1000
+    IS_ETHERNET_10GBase = 10000
+
+
+
+
+
+

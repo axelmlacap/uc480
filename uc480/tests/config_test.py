@@ -1,0 +1,17 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu May  9 12:11:47 2019
+
+@author: Fotonica
+"""
+
+import yaml
+
+def load_config(config_file):
+    with open(config_file, 'r') as stream:
+        try:
+            return yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            print(exc)
+
+cfg = load_config('..\\config.yaml')

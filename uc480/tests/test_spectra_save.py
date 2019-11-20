@@ -1,5 +1,5 @@
-from uc480.core.app import SpectraSave as Backend
-from uc480.core.app import SpectraSaveUi as Frontend
+from uc480.core.app import CameraSave as Backend
+from uc480.core.app import CameraSaveUi as Frontend
 
 from lantz.core.log import log_to_screen, DEBUG
 from lantz.qt import start_gui_app

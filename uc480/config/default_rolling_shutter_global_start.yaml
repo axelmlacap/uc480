@@ -1,0 +1,14 @@
+driver:
+    color_mode: IS_CM_MONO10
+    display_mode: IS_SET_DM_DIB
+    shutter_mode: IS_DEVICE_FEATURE_CAP_SHUTTER_MODE_ROLLING_GLOBAL_START
+    
+    pixel_clock: max
+    frame_rate: max
+    exposure: min
+    blacklevel_mode: IS_AUTO_BLACKLEVEL_OFF
+    blacklevel_offset: 240
+
+    dark_slope_base_pattern_path: E:\\Axel (Google Drive)\\Proyecto OCT\\2019-06_Caracterizacion_camara_10bits\\190625_slope_T=24C.npy
+    dark_offset_base_pattern_path: E:\\Axel (Google Drive)\\Proyecto OCT\\2019-06_Caracterizacion_camara_10bits\\190625_offset_T=24C.npy
+    dark_correction: True
